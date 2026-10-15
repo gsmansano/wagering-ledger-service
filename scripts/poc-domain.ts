@@ -2,8 +2,10 @@
 // Needs no database or Docker. Extended as each domain class lands.
 import { DomainError } from '../src/domain/domain-error';
 import { Money } from '../src/domain/money';
+import { FailureCode } from '../src/domain/failure-code';
 import { Wallet } from '../src/domain/wallet';
 import { LedgerDirection, WalletLedgerEntry } from '../src/domain/wallet-ledger-entry';
+import { referenceReadiness, WagerTransaction, WagerTransactionKind } from '../src/domain/wager-transaction';
 
 function section(title: string): void {
   console.log(`\n== ${title}`);
@@ -66,3 +68,40 @@ attempt('100.00 - 30.00 = 80.00 ?', () =>
     money: brl('30.00'), balanceBefore: brl('100.00'), balanceAfter: brl('80.00'), createdAt: new Date(),
   }),
 );
+
+section('WagerTransaction: creation rules');
+const baseTx = {
+  id: 'tx1', providerId: 'prov', externalTransactionId: 'ext1', idempotencyKey: 'key1', payloadHash: 'h1',
+  walletId: 'w1', playerId: 'p1', roundId: 'r1', gameId: 'g1', money: brl('10.00'), createdAt: new Date(),
+  referenceExternalTransactionId: undefined as string | undefined,
+};
+attempt('BET with a stray reference', () => WagerTransaction.create({ ...baseTx, kind: WagerTransactionKind.Bet, referenceExternalTransactionId: 'ext0' }));
+attempt('REFUND without a reference', () => WagerTransaction.create({ ...baseTx, kind: WagerTransactionKind.Refund }));
+attempt('WIN with a reference (allowed)', () => WagerTransaction.create({ ...baseTx, kind: WagerTransactionKind.Win, referenceExternalTransactionId: 'ext0' }).status);
+
+section('WagerTransaction: state machine');
+const tx = WagerTransaction.create({ ...baseTx, kind: WagerTransactionKind.Refund, referenceExternalTransactionId: 'ext0' });
+console.log(`created:             ${tx.status}`);
+tx.markPendingReference();
+console.log(`markPendingReference: ${tx.status}`);
+tx.reject(FailureCode.ReferenceNotFound, new Date());
+console.log(`reject:              ${tx.status} (${tx.failureCode})`);
+attempt('markProcessed on a terminal tx', () => tx.markProcessed(undefined, new Date()));
+
+section('Ledger direction');
+const mk = (kind: WagerTransactionKind, ref?: string) => WagerTransaction.create({ ...baseTx, kind, referenceExternalTransactionId: ref });
+const betTx = mk(WagerTransactionKind.Bet);
+const winTx = mk(WagerTransactionKind.Win);
+console.log(`BET -> ${betTx.ledgerDirectionFor()}, WIN -> ${winTx.ledgerDirectionFor()}`);
+console.log(`ROLLBACK of BET -> ${mk(WagerTransactionKind.Rollback, 'x').ledgerDirectionFor(betTx)}, of WIN -> ${mk(WagerTransactionKind.Rollback, 'x').ledgerDirectionFor(winTx)}`);
+attempt('LOSS ledger direction', () => mk(WagerTransactionKind.Loss).ledgerDirectionFor());
+
+section('Reference readiness: when does a reversal wait?');
+const ref = mk(WagerTransactionKind.Bet);
+console.log(`reference missing:            ${referenceReadiness(undefined)}`);
+console.log(`reference PENDING:            ${referenceReadiness(ref)}`);
+ref.markProcessed(undefined, new Date());
+console.log(`reference PROCESSED:          ${referenceReadiness(ref)}`);
+const dead = mk(WagerTransactionKind.Bet);
+dead.reject(FailureCode.InsufficientFunds, new Date());
+console.log(`reference REJECTED:           ${referenceReadiness(dead)}`);
