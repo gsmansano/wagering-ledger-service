@@ -14,6 +14,8 @@ Section references (§) point to the original requirements document.
 | 5   | Migrations run by a one-shot `migrate` Compose service | App instances start only after it succeeds, so several instances never race to migrate the schema. | M1 |
 | 6   | Tests use a separate `wagering_test` database, migrated once per run and truncated between tests | Commits are real, which the concurrency tests need (parallel requests on separate connections); rollback-per-test cannot exercise that. | M1 |
 | 7   | Decimal library: `decimal.js` | Exact decimal arithmetic with string input/output, mapping directly to `NUMERIC(…, 2)` and the `"25.00"` contract. `Money` normalizes to scale 2. | M2 |
+| 8   | `Wallet.debit`/`credit` change the balance and return the `WalletLedgerEntry` that records it | The balance and its ledger entry cannot be separated, so the invariant holds by construction. Ids and time are passed in (`entryId`, `now`) to keep the domain deterministic. `version` and `updatedAt` change only when the balance does. | M2 |
+| 9   | Insufficient funds is signalled by throwing `InsufficientFundsError` (a `DomainError`) | Keeps `debit` simple (entry or exception); the use case catches it and rejects the transaction with `INSUFFICIENT_FUNDS`. Other domain violations (currency mismatch, non-positive amount) are plain `DomainError`s. | M2 |
 
 ---
 
