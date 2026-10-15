@@ -10,6 +10,9 @@ Section references (§) point to the original requirements document.
 | 1   | ORM: MikroORM | Preferred by the spec; explicit Unit of Work (`em.transactional()`) and `LockMode` fit the single-transaction write path. A forked `EntityManager` per request/message avoids stale Identity Map reads. Mappings live outside `src/domain`. | M0 |
 | 2   | SQS emulator: MiniStack | Free, lightweight, no account token, so a clean clone runs with `docker compose up`. FIFO and DLQ behaviour to be verified in M1; LocalStack is the fallback. | M0 |
 | 3   | Language: English for code, docs and commits | Matches existing docs and conventions; standard for technical work. | M0 |
+| 4   | SQS queues created by the app at startup | `CreateQueue` is idempotent, so concurrent instances are safe; the same code path provisions queues in Compose, tests and local runs. | M1 |
+| 5   | Migrations run by a one-shot `migrate` Compose service | App instances start only after it succeeds, so several instances never race to migrate the schema. | M1 |
+| 6   | Tests use a separate `wagering_test` database, migrated once per run and truncated between tests | Commits are real, which the concurrency tests need (parallel requests on separate connections); rollback-per-test cannot exercise that. | M1 |
 
 ---
 
@@ -19,15 +22,15 @@ Section references (§) point to the original requirements document.
 - [x] Toolchain verified (Bun 1.x, Docker Compose, git); repository initialized
 - [x] Decisions logged: ORM (MikroORM vs TypeORM), SQS emulator (LocalStack vs MiniStack), documentation language
 
-## M1 — Walking skeleton _(current)_
+## M1 — Walking skeleton
 
-- [ ] NestJS on Bun with strict TypeScript; Docker Compose with PostgreSQL and the SQS emulator
-- [ ] ORM connected; reversible migrations; FIFO queue + DLQ provisioned on startup
-- [ ] `bun test` running unit and integration tests against real PostgreSQL; `GET /health/live`
+- [x] NestJS on Bun with strict TypeScript; Docker Compose with PostgreSQL and the SQS emulator
+- [x] ORM connected; reversible migrations; FIFO queue + DLQ provisioned on startup
+- [x] `bun test` running unit and integration tests against real PostgreSQL; `GET /health/live`
 
 **Done when:** a clean clone runs `docker compose up` and `bun test` green.
 
-## M2 — Domain model — §6
+## M2 — Domain model — §6 _(current)_
 
 - [ ] `Money`, `Wallet`, `WagerTransaction`, `WalletLedgerEntry`, `InboxMessage`, `OutboxMessage`
 - [ ] `IntegrationEvent` hierarchy (4 events), `FailureCode` taxonomy, canonical payload hash

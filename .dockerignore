@@ -1,0 +1,7 @@
+node_modules
+local
+.git
+.env
+.env.*
+coverage
+dist

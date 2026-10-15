@@ -47,4 +47,14 @@ These are hard requirements of the specification.
 
 ## Commands
 
-To be added in M1 (start, test, migrations, Docker Compose).
+```bash
+docker compose up -d --build   # PostgreSQL, MiniStack, one-shot migrate, app on :3000
+bun test                       # all tests; needs postgres and ministack running
+bun test <path>                # a single file
+bun run typecheck              # tsc --noEmit
+bun run start                  # app on the host, against the Compose services
+bun run migration:up           # apply pending migrations
+bun run migration:down         # revert the most recent migration
+```
+
+Tests use the `wagering_test` database, created and migrated by `test/support/setup.ts` (preloaded via `bunfig.toml`). Migrations are hand-written classes registered in `src/infrastructure/database/migrations/index.ts`.

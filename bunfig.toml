@@ -1,0 +1,3 @@
+[test]
+# Points the process at the test database and runs migrations once before any test file.
+preload = ["./test/support/setup.ts"]
