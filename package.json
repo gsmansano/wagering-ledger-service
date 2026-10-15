@@ -7,6 +7,7 @@
     "start": "bun src/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
+    "poc:domain": "bun scripts/poc-domain.ts",
     "migration:up": "bun src/infrastructure/database/migrate.ts up",
     "migration:down": "bun src/infrastructure/database/migrate.ts down"
   },

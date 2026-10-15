@@ -24,6 +24,7 @@ bun test
 |---|---|
 | `bun run start` | Run the app on the host against the Compose services |
 | `bun test` | Unit and integration tests (requires `postgres` and `ministack` running) |
+| `bun run poc:domain` | Print a hands-on tour of the domain model (no Docker needed) |
 | `bun run typecheck` | Type-check with `tsc --noEmit` |
 | `bun run migration:up` | Apply pending migrations |
 | `bun run migration:down` | Revert the most recent migration |

@@ -36,24 +36,28 @@ Section references (§) point to the original requirements document.
 - [ ] `Money`, `Wallet`, `WagerTransaction`, `WalletLedgerEntry`, `InboxMessage`, `OutboxMessage`
 - [ ] `IntegrationEvent` hierarchy (4 events), `FailureCode` taxonomy, canonical payload hash
 - [ ] Unit tests (§13); domain free of framework and ORM imports
+- [ ] PoC: `bun run poc:domain` prints the domain rules in action (no Docker needed)
 
 ## M3 — Schema and persistence — §5.9
 
 - [ ] Migrations for all tables, with uniqueness, non-negative balance and ledger immutability enforced by the database
 - [ ] ORM mappings outside the domain; repository ports and adapters
 - [ ] Integration tests proving each constraint and migration reversibility
+- [ ] PoC: `psql` snippets that try to violate each constraint and show the database refusing them
 
 ## M4 — Core transaction processing — §7, §8
 
 - [ ] Concurrency strategy chosen and logged
 - [ ] `CreateWallet` (with OPENING entry) and `ProcessWagerTransaction` for BET/WIN/LOSS in a single SQL transaction: idempotency, payload conflict detection, wallet lock, ledger, outbox
 - [ ] Concurrency tests: 50 parallel duplicates, the 100.00 vs 2 × 80.00 race, parallel wallets
+- [ ] PoC: curl sequence: create a wallet, BET, duplicate BET, overdraft
 
 ## M5 — Reversals and out-of-order references — §7, §7.1
 
 - [ ] REFUND / ROLLBACK rules, including the reversal-would-go-negative case
 - [ ] `PENDING_REFERENCE` handling with a backoff worker and a terminal rejection after the retry limit
 - [ ] Tests for every reversal rule and for references arriving late
+- [ ] PoC: curl sequence: REFUND before its BET, then the BET, and the pending transaction resolves
 
 ## M6 — HTTP API — §9, §2
 
@@ -61,22 +65,26 @@ Section references (§) point to the original requirements document.
 - [ ] Consistent HTTP status mapping (logged); `Idempotency-Key` enforcement
 - [ ] Authentication extension point (no-op guard) with the intended design documented
 - [ ] End-to-end tests per endpoint and per status class
+- [ ] PoC: Postman collection in `docs/` covering every endpoint
 
 ## M7 — SQS consumer and inbox — §10
 
 - [ ] Consumer reusing the HTTP use case; persistent inbox dedup; ack only after commit
 - [ ] Business / transient / permanent error handling with retry limit and DLQ; graceful SIGTERM
 - [ ] Tests: redelivery, retry to DLQ, crash after commit and before ack
+- [ ] PoC: Send a message with the AWS CLI against MiniStack and watch the ledger change
 
 ## M8 — Transactional outbox — §11
 
 - [ ] Publisher safe under concurrent instances (`FOR UPDATE SKIP LOCKED`) with retry backoff
 - [ ] Tests: concurrent publishers, crash between commit and publish
+- [ ] PoC: Script that shows outbox rows being published and what happens after a crash
 
 ## M9 — Multi-instance and recovery — §8, §13
 
 - [ ] Three or more instances under mixed load on shared wallets
 - [ ] Restart mid-load with verified convergence; `balance == ledger` checked for every wallet
+- [ ] PoC: Script that starts several instances, applies mixed load, kills one and prints the `balance == ledger` check
 
 ## M10 — Observability — §12
 

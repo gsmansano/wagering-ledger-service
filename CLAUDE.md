@@ -23,6 +23,7 @@ At the start of a session, read `PLAN.md` and the most recent file in `docs/devl
 
 - Work milestone by milestone, following `PLAN.md`. Do not start work from a later milestone without agreement.
 - Design decisions (concurrency strategy, schema, HTTP status mapping, failure codes, interpretations of ambiguous requirements) are proposed with options and a recommendation, then confirmed before implementation. Every confirmed decision is recorded in the `PLAN.md` decisions log.
+- Each milestone with observable behaviour ends with a hands-on PoC that can be run from the terminal or Postman. Its commands are documented in `README.md` and it is listed as a checkbox in the milestone.
 - When a milestone is complete, tick its checkboxes in `PLAN.md`.
 - At the end of a session, write a devlog entry (`/log`).
 
