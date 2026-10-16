@@ -16,6 +16,21 @@ class ThrowingController {
     throw new InvalidInputError('amount is malformed');
   }
 
+  @Get('deadlock')
+  deadlock(): never {
+    throw Object.assign(new Error('deadlock detected: secret table detail'), { code: '40P01' });
+  }
+
+  @Get('connection-lost')
+  connectionLost(): never {
+    throw new Error('wrapped', { cause: Object.assign(new Error('connect ECONNREFUSED 10.0.0.1:5432'), { code: 'ECONNREFUSED' }) });
+  }
+
+  @Get('constraint-violation')
+  constraintViolation(): never {
+    throw Object.assign(new Error('duplicate key value violates unique constraint "secret_idx"'), { code: '23505' });
+  }
+
   @Get('domain-bug')
   domainBug(): never {
     throw new DomainError('secret internal detail');
@@ -55,10 +70,32 @@ describe('HTTP error mapping (real app)', () => {
     await app.close();
   });
 
-  it('reports invalid input as 422 INVALID_PAYLOAD, the provider can fix it', async () => {
+  it('reports invalid input as 400 INVALID_PAYLOAD, the provider can fix it', async () => {
     const res = await fetch(`${baseUrl}/test-errors/invalid-input`);
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'INVALID_PAYLOAD', message: 'amount is malformed' });
+  });
+
+  it.each(['deadlock', 'connection-lost'])('reports %s as 503 TRANSIENT_FAILURE with Retry-After, without leaking details', async (path) => {
+    const res = await fetch(`${baseUrl}/test-errors/${path}`);
+    expect(res.status).toBe(503);
+    expect(res.headers.get('retry-after')).toBe('1');
+    const text = await res.text();
+    expect(JSON.parse(text).error).toBe('TRANSIENT_FAILURE');
+    expect(text).not.toContain('secret table detail');
+    expect(text).not.toContain('10.0.0.1');
+  });
+
+  it('reports an unclassified database error as 500, not as a retryable failure', async () => {
+    const res = await fetch(`${baseUrl}/test-errors/constraint-violation`);
+    expect(res.status).toBe(500);
+    expect(res.headers.get('retry-after')).toBeNull();
+    expect(await res.json()).toEqual({ error: 'INTERNAL_ERROR', message: 'Internal server error' });
+  });
+
+  it('keeps the status of framework errors, such as an unknown route (404)', async () => {
+    const res = await fetch(`${baseUrl}/no-such-route`);
+    expect(res.status).toBe(404);
   });
 
   it.each(['domain-bug', 'invalid-transition', 'unresolved-conflict', 'version-conflict'])(

@@ -79,11 +79,11 @@ describe('wagering over HTTP (real PostgreSQL + SQS emulator)', () => {
       expect(again.body.error).toBe('WALLET_ALREADY_EXISTS');
     });
 
-    it('answers 400 for a malformed body and 422 for an invalid amount', async () => {
+    it('answers 400 MALFORMED_REQUEST for a malformed body and 400 INVALID_PAYLOAD for an invalid amount', async () => {
       expect((await post('/wallets', { playerId: 'x' })).status).toBe(400);
       expect((await post('/wallets', { initialBalance: { currency: 'BRL' } })).status).toBe(400);
       const negative = await post('/wallets', { playerId: 'x', initialBalance: { currency: 'BRL', amount: '-1.00' } });
-      expect(negative.status).toBe(422);
+      expect(negative.status).toBe(400);
       expect(negative.body.error).toBe('INVALID_PAYLOAD');
     });
   });
@@ -112,11 +112,58 @@ describe('wagering over HTTP (real PostgreSQL + SQS emulator)', () => {
       });
     });
 
-    it('reports a business rejection in the body with its failure code', async () => {
+    it('answers 422 for a business rejection, with the failure code, and again for its replay', async () => {
       const { playerId, walletId } = await newWallet('10.00');
-      const res = await post('/wagering/transactions', transaction(walletId, playerId), { 'Idempotency-Key': crypto.randomUUID() });
-      expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ status: 'REJECTED', failureCode: 'INSUFFICIENT_FUNDS', balance: { amount: '10.00' } });
+      const body = transaction(walletId, playerId);
+      const headers = { 'Idempotency-Key': crypto.randomUUID() };
+
+      const res = await post('/wagering/transactions', body, headers);
+      expect(res.status).toBe(422);
+      expect(res.body).toMatchObject({
+        status: 'REJECTED',
+        failureCode: 'INSUFFICIENT_FUNDS',
+        balance: { amount: '10.00', currency: 'BRL' },
+        kind: 'BET',
+        money: { amount: '25.00', currency: 'BRL' },
+        idempotentReplay: false,
+      });
+
+      const replay = await post('/wagering/transactions', body, headers);
+      expect(replay.status).toBe(422);
+      expect(replay.body).toMatchObject({ transactionId: res.body.transactionId, failureCode: 'INSUFFICIENT_FUNDS', idempotentReplay: true });
+    });
+
+    it('returns the same transaction view on every status: ids, kind, money and timestamps', async () => {
+      const { playerId, walletId } = await newWallet('100.00');
+      const res = await post('/wagering/transactions', transaction(walletId, playerId, { externalTransactionId: 'view-1' }), {
+        'Idempotency-Key': crypto.randomUUID(),
+      });
+      expect(res.body).toMatchObject({ providerId: 'provider-a', externalTransactionId: 'view-1', walletId, status: 'PROCESSED' });
+      expect(new Date(res.body.createdAt).toISOString()).toBe(res.body.createdAt);
+      expect(new Date(res.body.processedAt).toISOString()).toBe(res.body.processedAt);
+    });
+
+    it('uses a valid X-Correlation-Id as the correlation id of the events, and ignores an invalid one', async () => {
+      const { playerId, walletId } = await newWallet('100.00');
+      const correlationOf = async (externalId: string) =>
+        (await orm.em.getConnection().execute<{ payload: { correlationId: string } }[]>(
+          `select o.payload from outbox_messages o
+             join wager_transactions t on o.payload->'data'->>'transactionId' = t.id::text
+            where t.external_transaction_id = ? and o.event_type = 'WagerTransactionProcessed'`,
+          [externalId],
+        ))[0]!;
+
+      await post('/wagering/transactions', transaction(walletId, playerId, { externalTransactionId: 'corr-ok' }), {
+        'Idempotency-Key': crypto.randomUUID(),
+        'X-Correlation-Id': 'trace-abc.123',
+      });
+      await post('/wagering/transactions', transaction(walletId, playerId, { externalTransactionId: 'corr-bad' }), {
+        'Idempotency-Key': crypto.randomUUID(),
+        'X-Correlation-Id': 'has spaces and <markup>',
+      });
+
+      expect((await correlationOf('corr-ok')).payload.correlationId).toBe('trace-abc.123');
+      expect((await correlationOf('corr-bad')).payload.correlationId).toMatch(UUID_V7);
     });
 
     it('answers 409 IDEMPOTENCY_CONFLICT for the same key with another payload', async () => {
@@ -138,20 +185,26 @@ describe('wagering over HTTP (real PostgreSQL + SQS emulator)', () => {
       expect((await post('/wagering/transactions', { ...transaction(walletId, playerId), money: '25.00' }, headers)).status).toBe(400);
     });
 
+    it('answers 400 MALFORMED_REQUEST when walletId is not a UUID, instead of failing in the database', async () => {
+      const res = await post('/wagering/transactions', transaction('not-a-uuid', 'someone'), { 'Idempotency-Key': crypto.randomUUID() });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: 'MALFORMED_REQUEST', message: 'walletId must be a UUID' });
+    });
+
     it('answers 404 for an unknown wallet', async () => {
       const res = await post('/wagering/transactions', transaction(crypto.randomUUID(), 'nobody'), { 'Idempotency-Key': crypto.randomUUID() });
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('WALLET_NOT_FOUND');
     });
 
-    it('answers 422 for OPENING, a wrong player, and an invalid amount', async () => {
+    it('answers 400 INVALID_PAYLOAD for OPENING, a wrong player and an invalid amount', async () => {
       const { playerId, walletId } = await newWallet('100.00');
       const key = () => ({ 'Idempotency-Key': crypto.randomUUID() });
-      expect((await post('/wagering/transactions', transaction(walletId, playerId, { kind: 'OPENING' }), key())).status).toBe(422);
-      expect((await post('/wagering/transactions', transaction(walletId, 'someone-else'), key())).status).toBe(422);
+      expect((await post('/wagering/transactions', transaction(walletId, playerId, { kind: 'OPENING' }), key())).status).toBe(400);
+      expect((await post('/wagering/transactions', transaction(walletId, 'someone-else'), key())).status).toBe(400);
       expect(
         (await post('/wagering/transactions', transaction(walletId, playerId, { money: { amount: '1.234', currency: 'BRL' } }), key())).status,
-      ).toBe(422);
+      ).toBe(400);
     });
 
     it('answers 202 PENDING_REFERENCE for a reversal whose reference has not arrived, and a replay stays 202 until the worker retries it', async () => {

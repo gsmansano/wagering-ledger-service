@@ -31,7 +31,7 @@ WALLET_ID="$(echo "$WALLET_JSON" | sed -E 's/.*"id":"([^"]+)".*/\1/')"
 call "1. BET 30.00 (expect PROCESSED, balance 70.00, idempotentReplay false)" /wagering/transactions "poc:bet-$RUN-1" "$(bet_body "$WALLET_ID" "bet-$RUN-1" 30.00)"
 call "2. The same BET again (expect the same transactionId, balance 70.00, idempotentReplay true)" /wagering/transactions "poc:bet-$RUN-1" "$(bet_body "$WALLET_ID" "bet-$RUN-1" 30.00)"
 call "3. Same key, different amount (expect 409 IDEMPOTENCY_CONFLICT)" /wagering/transactions "poc:bet-$RUN-1" "$(bet_body "$WALLET_ID" "bet-$RUN-1" 31.00)"
-call "4. Overdraft: BET 500.00 (expect REJECTED INSUFFICIENT_FUNDS, balance still 70.00)" /wagering/transactions "poc:bet-$RUN-2" "$(bet_body "$WALLET_ID" "bet-$RUN-2" 500.00)"
+call "4. Overdraft: BET 500.00 (expect HTTP 422, REJECTED INSUFFICIENT_FUNDS, balance still 70.00)" /wagering/transactions "poc:bet-$RUN-2" "$(bet_body "$WALLET_ID" "bet-$RUN-2" 500.00)"
 call "5. Missing Idempotency-Key (expect 400)" /wagering/transactions - "$(bet_body "$WALLET_ID" "bet-$RUN-3" 1.00)"
 call "6. Unknown wallet (expect 404)" /wagering/transactions "poc:bet-$RUN-4" "$(bet_body 00000000-0000-4000-8000-000000000000 "bet-$RUN-4" 1.00)"
 

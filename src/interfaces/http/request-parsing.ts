@@ -26,3 +26,25 @@ export function optionalString(source: Record<string, unknown>, name: string): s
   }
   return value;
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** An id that is stored in a `uuid` column: anything else would reach PostgreSQL as a cast error and become a 500. */
+export function requiredUuid(source: Record<string, unknown>, name: string): string {
+  const value = requiredString(source, name);
+  return asUuid(value, name);
+}
+
+export function asUuid(value: string, name: string): string {
+  if (!UUID.test(value)) {
+    throw new BadRequestException({ error: 'MALFORMED_REQUEST', message: `${name} must be a UUID` });
+  }
+  return value;
+}
+
+const CORRELATION_ID = /^[\w.:-]{1,128}$/;
+
+/** A caller-supplied correlation id is used only when it is short and plain; otherwise a new one is generated. */
+export function correlationIdFrom(header: string | undefined): string | undefined {
+  return header !== undefined && CORRELATION_ID.test(header) ? header : undefined;
+}

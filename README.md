@@ -36,12 +36,29 @@ Configuration is read from environment variables; see `.env.example`. The SQS em
 
 ## HTTP API (so far)
 
-Minimal endpoints of M4; the full API and its status table arrive in M6.
+Endpoints so far; the read endpoints, reconciliation and readiness arrive in the next M6 steps. Errors are `{ error, message }` with a stable code.
 
-| Endpoint | Success | Errors |
+| Endpoint | Success |
+|---|---|
+| `POST /wallets` `{ playerId, initialBalance: { currency, amount? } }` | `201` wallet with balance and `version`; an omitted or `"0.00"` amount opens an empty wallet |
+| `POST /wagering/transactions` with an `Idempotency-Key` header (unique per provider) and an optional `X-Correlation-Id` | the transaction view plus `idempotentReplay` (see below) |
+
+The transaction view is `{ transactionId, providerId, externalTransactionId, walletId, kind, money, status, failureCode?, referenceExternalTransactionId?, balance?, createdAt, processedAt? }`; `balance` is the balance observed at settlement and is absent while the transaction is pending.
+
+### Status codes
+
+One table for every endpoint, so a provider can decide from the status alone:
+
+| Status | Meaning | What the provider does |
 |---|---|---|
-| `POST /wallets` `{ playerId, initialBalance: { currency, amount? } }` | `201` wallet with balance and `version`; an omitted or `"0.00"` amount opens an empty wallet | `400` malformed body, `409 WALLET_ALREADY_EXISTS`, `422 INVALID_PAYLOAD` |
-| `POST /wagering/transactions` with an `Idempotency-Key` header (unique per provider) | `200` `{ transactionId, status, failureCode?, balance, idempotentReplay }` for `PROCESSED` and for a business `REJECTED` (see `failureCode`); `202` with `status: PENDING_REFERENCE` (no `balance`) for a REFUND/ROLLBACK whose reference has not arrived or is still in flight | `400` missing header or malformed body, `404 WALLET_NOT_FOUND`, `409 IDEMPOTENCY_CONFLICT`, `422 INVALID_PAYLOAD` |
+| `200` / `201` | Processed (`201`: wallet created) | Nothing |
+| `202` | `PENDING_REFERENCE`: a REFUND/ROLLBACK waiting for its reference | Resend the same request later, or wait |
+| `400` | Invalid payload: `MALFORMED_REQUEST` (missing header, wrong type, unknown kind, id not a UUID) or `INVALID_PAYLOAD` (bad amount, `OPENING`, wrong player) | Fix it and send as a new request |
+| `404` | `WALLET_NOT_FOUND` | Fix the id |
+| `409` | `IDEMPOTENCY_CONFLICT` (same key, other payload) or `WALLET_ALREADY_EXISTS` | Do not resend with that key |
+| `422` | Business rejection: the body carries `status: REJECTED` and a `failureCode`; a replay answers `422` again | Final, do not resend |
+| `503` + `Retry-After` | `TRANSIENT_FAILURE`: the database was unavailable or a deadlock occurred | Resend the same request |
+| `500` | `INTERNAL_ERROR`: a bug, details are only in the server log | Report it |
 
 ```bash
 docker compose up -d postgres ministack migrate && bun run start   # in one terminal

@@ -1,7 +1,8 @@
 import { BadRequestException, Body, Controller, Headers, HttpCode, Post, Res } from '@nestjs/common';
 import { ProcessWagerTransaction } from '../../application/transaction/process-wager-transaction';
-import { WagerTransactionKind, WagerTransactionStatus } from '../../domain/transaction/wager-transaction';
-import { asObject, optionalString, requiredString } from './request-parsing';
+import { WagerTransactionKind } from '../../domain/transaction/wager-transaction';
+import { asObject, correlationIdFrom, optionalString, requiredString, requiredUuid } from './request-parsing';
+import { submitStatusCode, toTransactionView } from './transaction-view';
 
 const KINDS = new Set<string>(Object.values(WagerTransactionKind));
 
@@ -13,6 +14,7 @@ export class WageringController {
   @HttpCode(200)
   async submit(
     @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined,
     @Body() body: unknown,
     @Res({ passthrough: true }) response: { status(code: number): unknown },
   ) {
@@ -31,23 +33,17 @@ export class WageringController {
       providerId: requiredString(request, 'providerId'),
       externalTransactionId: requiredString(request, 'externalTransactionId'),
       playerId: requiredString(request, 'playerId'),
-      walletId: requiredString(request, 'walletId'),
+      walletId: requiredUuid(request, 'walletId'),
       roundId: requiredString(request, 'roundId'),
       gameId: requiredString(request, 'gameId'),
       kind: kind as WagerTransactionKind, // checked against the enum values just above
       money: { amount: requiredString(money, 'amount'), currency: requiredString(money, 'currency') },
       referenceExternalTransactionId: optionalString(request, 'referenceExternalTransactionId'),
+      correlationId: correlationIdFrom(correlationId),
     });
 
-    // Provisional (decision #41, finalized in M6): accepted, not settled yet; the same key later returns the result.
-    if (result.transaction.status === WagerTransactionStatus.PendingReference) response.status(202);
-
-    return {
-      transactionId: result.transaction.id,
-      status: result.transaction.status,
-      ...(result.transaction.failureCode !== undefined && { failureCode: result.transaction.failureCode }),
-      balance: result.balanceAfter?.toJSON(),
-      idempotentReplay: result.idempotentReplay,
-    };
+    // Decision #43: 200 processed, 202 pending, 422 business rejection (a replay of any of them answers the same).
+    response.status(submitStatusCode(result.transaction.status));
+    return { ...toTransactionView(result.transaction, result.balanceAfter), idempotentReplay: result.idempotentReplay };
   }
 }

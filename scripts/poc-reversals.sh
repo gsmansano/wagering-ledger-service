@@ -52,13 +52,13 @@ echo; echo "### 3. The BET arrives (expect 200 PROCESSED, balance 70.00)"
 send "poc:bet-$RUN" "$(body "$W" "bet-$RUN" BET 30.00)"
 echo; echo "### 4. Wait for the worker, then replay the REFUND (expect PROCESSED, balance 100.00)"
 wait_settled "poc:refund-$RUN" "$REFUND"
-echo; echo "### 5. ROLLBACK of the same BET (expect REJECTED ALREADY_REVERSED: one reversal per transaction)"
+echo; echo "### 5. ROLLBACK of the same BET (expect 422 REJECTED ALREADY_REVERSED: one reversal per transaction)"
 send "poc:rollback-$RUN" "$(body "$W" "rollback-$RUN" ROLLBACK 30.00 "bet-$RUN")"
 
 ORPHAN="$(body "$W" "orphan-$RUN" REFUND 5.00 "never-$RUN")"
 echo; echo "### 6. REFUND of a transaction that never arrives (expect 202 now)"
 send "poc:orphan-$RUN" "$ORPHAN"
-echo; echo "### 7. After the last retry (expect REJECTED REFERENCE_NOT_FOUND, balance 100.00)"
+echo; echo "### 7. After the last retry (expect the replay to answer 422 REJECTED REFERENCE_NOT_FOUND, balance 100.00)"
 wait_settled "poc:orphan-$RUN" "$ORPHAN"
 
 echo

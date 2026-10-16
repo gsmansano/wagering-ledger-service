@@ -1,33 +1,50 @@
-import { type ArgumentsHost, Catch, type ExceptionFilter } from '@nestjs/common';
+import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, Logger } from '@nestjs/common';
 import { IdempotencyConflictError } from '../../application/transaction/idempotency-conflict.error';
 import { WalletAlreadyExistsError } from '../../application/wallet/wallet-already-exists.error';
 import { WalletNotFoundError } from '../../application/wallet/wallet-not-found.error';
 import { InvalidInputError } from '../../domain/shared/invalid-input-error';
+import { isTransientDatabaseError } from '../../infrastructure/database/transient-errors';
 
-interface JsonResponse {
+interface HttpResponse {
   status(code: number): { json(body: unknown): void };
+  setHeader(name: string, value: string): void;
 }
 
-// Minimal mapping for M4; the complete, consistent table is logged in M6.
-//   400 malformed request (thrown by request-parsing: missing header, field missing or not a string)
-//   404 unknown wallet
+// The status table of decision #43, applied to every endpoint:
+//   400 invalid payload: malformed (HttpException from request-parsing) or well-formed but invalid (InvalidInputError)
+//   404 unknown wallet or transaction
 //   409 conflict: duplicate wallet, idempotency key or provider transaction reused with another payload
-//   422 well-formed but invalid: bad amount, OPENING from outside, wrong player, kind not supported yet
-//   500 anything else: programming errors are never reported as the provider's fault
-// A business rejection (REJECTED) is not an error: it is a 200 whose body carries the failure code (provisional, M6).
-function describe(error: Error): { status: number; code: string } {
-  if (error instanceof WalletNotFoundError) return { status: 404, code: 'WALLET_NOT_FOUND' };
-  if (error instanceof WalletAlreadyExistsError) return { status: 409, code: 'WALLET_ALREADY_EXISTS' };
-  if (error instanceof IdempotencyConflictError) return { status: 409, code: 'IDEMPOTENCY_CONFLICT' };
-  return { status: 422, code: 'INVALID_PAYLOAD' }; // InvalidInputError
-}
+//   503 transient infrastructure failure (decision #44), with Retry-After
+//   500 anything else: programming errors are never reported as the provider's fault, and never leak their message
+// 200, 201, 202 and the 422 business rejection are not errors; the controllers answer them.
+const RETRY_AFTER_SECONDS = '1';
 
-// Only errors the caller can act on are listed. Any other error (a plain DomainError such as an invalid state
-// transition, UnresolvedConflictError, WalletVersionConflictError) is a bug and falls through to Nest's 500.
-@Catch(WalletNotFoundError, WalletAlreadyExistsError, IdempotencyConflictError, InvalidInputError)
+@Catch()
 export class ApplicationErrorFilter implements ExceptionFilter {
-  catch(error: Error, host: ArgumentsHost): void {
-    const { status, code } = describe(error);
-    host.switchToHttp().getResponse<JsonResponse>().status(status).json({ error: code, message: error.message });
+  private readonly logger = new Logger(ApplicationErrorFilter.name);
+
+  catch(error: unknown, host: ArgumentsHost): void {
+    const response = host.switchToHttp().getResponse<HttpResponse>();
+
+    if (error instanceof HttpException) {
+      response.status(error.getStatus()).json(error.getResponse());
+    } else if (error instanceof WalletNotFoundError) {
+      response.status(404).json({ error: 'WALLET_NOT_FOUND', message: error.message });
+    } else if (error instanceof WalletAlreadyExistsError) {
+      response.status(409).json({ error: 'WALLET_ALREADY_EXISTS', message: error.message });
+    } else if (error instanceof IdempotencyConflictError) {
+      response.status(409).json({ error: 'IDEMPOTENCY_CONFLICT', message: error.message });
+    } else if (error instanceof InvalidInputError) {
+      response.status(400).json({ error: 'INVALID_PAYLOAD', message: error.message });
+    } else if (isTransientDatabaseError(error)) {
+      this.logger.warn(`Transient failure: ${error instanceof Error ? error.message : String(error)}`);
+      response.setHeader('Retry-After', RETRY_AFTER_SECONDS);
+      response
+        .status(503)
+        .json({ error: 'TRANSIENT_FAILURE', message: 'The service is temporarily unavailable; retry the same request' });
+    } else {
+      this.logger.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+      response.status(500).json({ error: 'INTERNAL_ERROR', message: 'Internal server error' });
+    }
   }
 }
