@@ -63,8 +63,9 @@ describe('concurrency primitives (real PostgreSQL)', () => {
         const locked = (await r.wallets.findByIdForUpdate(wallet.id))!;
         firstHasLock();
         await held;
+        const versionRead = locked.version;
         locked.debit({ entryId: crypto.randomUUID(), transactionId: crypto.randomUUID(), money: brl('80.00'), now: NOW });
-        await r.wallets.update(locked);
+        await r.wallets.update(locked, versionRead);
         events.push('first commits');
       });
       await firstLocked;
@@ -128,8 +129,9 @@ describe('concurrency primitives (real PostgreSQL)', () => {
           if (++inserted === 2) bothInserted();
           await barrier;
           const locked = (await r.wallets.findByIdForUpdate(wallet.id))!;
+          const versionRead = locked.version;
           locked.debit({ entryId: crypto.randomUUID(), transactionId: crypto.randomUUID(), money: brl('10.00'), now: NOW });
-          await r.wallets.update(locked);
+          await r.wallets.update(locked, versionRead);
         });
 
       await Promise.all([request('key-a'), request('key-b')]);

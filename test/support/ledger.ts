@@ -8,16 +8,16 @@ import { expect } from 'bun:test';
  */
 export async function assertLedgerMatchesBalance(orm: MikroORM, walletId: string): Promise<void> {
   const db = orm.em.getConnection();
-  const [wallet] = await db.execute<{ balance: string; net: string; entries: string }[]>(
-    `select w.balance,
-            coalesce(sum(case e.direction when 'CREDIT' then e.amount else -e.amount end), 0) as net,
+  // Compared by PostgreSQL as numeric, never converted to a JS number.
+  const [wallet] = await db.execute<{ matches: boolean; entries: string }[]>(
+    `select w.balance = coalesce(sum(case e.direction when 'CREDIT' then e.amount else -e.amount end), 0) as matches,
             count(e.id) as entries
        from wallets w left join ledger_entries e on e.wallet_id = w.id
       where w.id = ? group by w.id`,
     [walletId],
   );
   expect(wallet).toBeDefined();
-  expect(Number(wallet!.net).toFixed(2)).toBe(Number(wallet!.balance).toFixed(2));
+  expect(wallet!.matches).toBe(true);
 
   const [moving] = await db.execute<{ n: string }[]>(
     `select count(*) as n from wager_transactions

@@ -1,5 +1,6 @@
 import type { EntityManager } from '@mikro-orm/postgresql';
 import type { WalletRepository } from '../../../application/ports/wallet.repository';
+import { WalletVersionConflictError } from '../../../application/wallet/wallet-version-conflict.error';
 import type { Wallet } from '../../../domain/wallet/wallet';
 import { rowToWallet, walletToRow } from '../mappers/wallet.mapper';
 import { WalletSchema } from '../rows/wallet.row';
@@ -45,8 +46,13 @@ export class MikroOrmWalletRepository implements WalletRepository {
     return row ? rowToWallet(row) : undefined;
   }
 
-  async update(wallet: Wallet): Promise<void> {
+  async update(wallet: Wallet, expectedVersion: number): Promise<void> {
     const { balance, version, updatedAt } = walletToRow(wallet);
-    await this.em.nativeUpdate(WalletSchema, { id: wallet.id }, { balance, version, updatedAt });
+    const updated = await this.em.nativeUpdate(
+      WalletSchema,
+      { id: wallet.id, version: expectedVersion },
+      { balance, version, updatedAt },
+    );
+    if (updated !== 1) throw new WalletVersionConflictError(wallet.id, expectedVersion);
   }
 }

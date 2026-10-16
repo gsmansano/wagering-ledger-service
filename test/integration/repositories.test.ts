@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import type { MikroORM } from '@mikro-orm/postgresql';
+import { WalletVersionConflictError } from '../../src/application/wallet/wallet-version-conflict.error';
 import { MikroOrmUnitOfWork } from '../../src/infrastructure/database/repositories/mikro-orm-unit-of-work';
 import { InboxMessage } from '../../src/domain/messaging/inbox-message';
 import { OutboxMessage } from '../../src/domain/messaging/outbox-message';
@@ -83,12 +84,24 @@ describe('repositories (real PostgreSQL)', () => {
       const wallet = newWallet();
       await uow.run((r) => r.wallets.insert(wallet));
       wallet.debit({ entryId: id(), transactionId: id(), money: brl('30.00'), now: at(5) });
-      await uow.run((r) => r.wallets.update(wallet));
+      await uow.run((r) => r.wallets.update(wallet, 1));
 
       const found = (await uow.run((r) => r.wallets.findById(wallet.id)))!;
       expect(found.balance.equals(brl('70.00'))).toBe(true);
       expect(found.version).toBe(2);
       expect(found.updatedAt).toEqual(at(5));
+    });
+
+    it('refuses to write a wallet whose stored version is not the one that was read, and changes nothing', async () => {
+      const wallet = newWallet();
+      await uow.run((r) => r.wallets.insert(wallet));
+      wallet.debit({ entryId: id(), transactionId: id(), money: brl('30.00'), now: at(5) });
+
+      await expect(uow.run((r) => r.wallets.update(wallet, 7))).rejects.toBeInstanceOf(WalletVersionConflictError);
+
+      const found = (await uow.run((r) => r.wallets.findById(wallet.id)))!;
+      expect(found.balance.equals(brl('100.00'))).toBe(true);
+      expect(found.version).toBe(1);
     });
 
     it('surfaces the database refusing a second wallet for the same player and currency', async () => {
@@ -174,12 +187,13 @@ describe('repositories (real PostgreSQL)', () => {
       const entries: WalletLedgerEntry[] = [];
       for (let i = 0; i < count; i++) {
         const bet = newBet(wallet.id, '10.00');
+        const versionRead = wallet.version;
         const entry = wallet.debit({ entryId: id(), transactionId: bet.id, money: brl('10.00'), now: at(i) });
         bet.markProcessed(undefined, at(i));
         await uow.run(async (r) => {
           await r.transactions.insert(bet);
           await r.ledger.append(entry);
-          await r.wallets.update(wallet);
+          await r.wallets.update(wallet, versionRead);
         });
         entries.push(entry);
       }
@@ -250,7 +264,7 @@ describe('repositories (real PostgreSQL)', () => {
         await r.wallets.insert(wallet);
         await r.transactions.insert(bet);
         await r.ledger.append(wallet.debit({ entryId: id(), transactionId: bet.id, money: brl('30.00'), now: at(1) }));
-        await r.wallets.update(wallet);
+        await r.wallets.update(wallet, 1);
       });
 
       expect((await uow.run((r) => r.wallets.findById(wallet.id)))?.balance.equals(brl('70.00'))).toBe(true);

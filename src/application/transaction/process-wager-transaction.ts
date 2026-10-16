@@ -115,12 +115,13 @@ export class ProcessWagerTransaction {
         transaction.markProcessed(undefined, at);
         events.push(WagerTransactionProcessed.from(transaction, context()));
       } else {
+        const versionRead = wallet.version;
         const movement = { entryId: newId(), transactionId: transaction.id, money, now: at };
         try {
           const entry =
             transaction.ledgerDirectionFor() === LedgerDirection.Debit ? wallet.debit(movement) : wallet.credit(movement);
           await repos.ledger.append(entry);
-          await repos.wallets.update(wallet);
+          await repos.wallets.update(wallet, versionRead);
           transaction.markProcessed(undefined, at);
           events.push(WagerTransactionProcessed.from(transaction, context()));
           events.push(WalletBalanceChanged.from(wallet, entry, context()));

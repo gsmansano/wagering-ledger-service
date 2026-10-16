@@ -10,6 +10,7 @@ import { UnsupportedKindError } from '../../src/application/transaction/unsuppor
 import { CreateWallet } from '../../src/application/wallet/create-wallet';
 import { WalletNotFoundError } from '../../src/application/wallet/wallet-not-found.error';
 import { DomainError } from '../../src/domain/shared/domain-error';
+import { Money } from '../../src/domain/shared/money';
 import { FailureCode } from '../../src/domain/transaction/failure-code';
 import { WagerTransactionKind, WagerTransactionStatus } from '../../src/domain/transaction/wager-transaction';
 import { MikroOrmUnitOfWork } from '../../src/infrastructure/database/repositories/mikro-orm-unit-of-work';
@@ -294,13 +295,14 @@ describe('ProcessWagerTransaction (real PostgreSQL)', () => {
 
       // The final balance is exactly what the accepted requests add up to, and never went below zero.
       const settled = [...byKey.values()].map((deliveries) => deliveries[0]!);
-      const net = settled.reduce((sum, r) => {
-        if (r.transaction.status !== WagerTransactionStatus.Processed) return sum;
-        const cents = Math.round(Number(r.transaction.money.toJSON().amount) * 100);
-        return sum + (r.transaction.kind === WagerTransactionKind.Bet ? -cents : cents);
-      }, 10_000);
-      expect(net).toBeGreaterThanOrEqual(0);
-      expect(await balanceOf()).toBe((net / 100).toFixed(2));
+      const expected = settled.reduce((balance, r) => {
+        if (r.transaction.status !== WagerTransactionStatus.Processed) return balance;
+        return r.transaction.kind === WagerTransactionKind.Bet
+          ? balance.subtract(r.transaction.money)
+          : balance.add(r.transaction.money);
+      }, Money.from({ amount: '100.00', currency: 'BRL' }));
+      expect(expected.isNegative()).toBe(false);
+      expect(await balanceOf()).toBe(expected.toJSON().amount);
 
       // 100.00 can fund at most 3 bets up front, so some of the 10 bets must have been rejected for lack of funds
       // unless wins arrived first; either way every rejection is INSUFFICIENT_FUNDS and the ledger agrees.

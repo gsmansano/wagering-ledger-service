@@ -12,6 +12,10 @@ export interface WalletRepository {
    */
   findByIdForUpdate(id: string): Promise<Wallet | undefined>;
   findByPlayerAndCurrency(playerId: string, currency: string): Promise<Wallet | undefined>;
-  /** Persists the balance, version and updatedAt of an existing wallet. */
-  update(wallet: Wallet): Promise<void>;
+  /**
+   * Persists the balance, version and updatedAt of an existing wallet, only if the stored version is still
+   * `expectedVersion` (the version read before the change). Throws WalletVersionConflictError otherwise.
+   * A second line of defence: the wallet lock already makes a conflict impossible.
+   */
+  update(wallet: Wallet, expectedVersion: number): Promise<void>;
 }
