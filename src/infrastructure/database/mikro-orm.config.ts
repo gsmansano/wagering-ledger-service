@@ -1,13 +1,15 @@
 import { defineConfig } from '@mikro-orm/postgresql';
 import { Migrator } from '@mikro-orm/migrations';
 import { migrationsList } from './migrations';
+import { LedgerEntrySchema } from './rows/ledger-entry.row';
+import { WagerTransactionSchema } from './rows/wager-transaction.row';
+import { WalletSchema } from './rows/wallet.row';
 
 export function createOrmConfig(databaseUrl: string) {
   return defineConfig({
     clientUrl: databaseUrl,
-    entities: [],
-    // Entities arrive in M3; until then an empty list is expected.
-    discovery: { warnWhenNoEntities: false },
+    // Persistence rows only; the domain classes are never registered with the ORM.
+    entities: [WalletSchema, WagerTransactionSchema, LedgerEntrySchema],
     extensions: [Migrator],
     migrations: {
       // Listed explicitly instead of discovered by glob, so the set of

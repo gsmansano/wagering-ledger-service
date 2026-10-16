@@ -27,6 +27,10 @@ Section references (§) point to the original requirements document.
 | 18  | Ids are `uuid` columns; money is `NUMERIC(19,2)`. | Native types, exact decimals matching `Money` scale 2 and the `"25.00"` contract. | M3 |
 | 19  | `wager_transactions` has a nullable `balance_after NUMERIC(19,2)`, filled when the transaction is processed or rejected. | A replay returns the original result including the balance observed then (§7 rule 7). `LOSS` and rejections have no ledger entry to derive it from. | M3 |
 | 20  | The opening credit is a real `wager_transactions` row with `kind = OPENING`, a synthetic provider id (`SYSTEM`) and `externalTransactionId = walletId`. | Every column stays `NOT NULL` and the ledger foreign key to the transaction is uniform. Settles the M2 open question about the OPENING entry's transaction. | M3 |
+| 21  | Persistence uses plain row types mapped with `EntitySchema`, plus mapper functions (`rehydrate` on the way in). Reads use `refresh: true`; writes are native `insert`/`nativeUpdate`. | Domain classes have private constructors and fields, so the ORM cannot map them. Keeps MikroORM features (`LockMode`, `transactional`) for M4. Native writes avoid Unit of Work surprises on the single-transaction write path. | M3 |
+| 22  | Transactions go through a `UnitOfWork` port: `run(work: (repos) => Promise<T>)` hands the work repositories bound to one transaction. No ambient context. | Explicit and easy to test; a transaction-scoped `EntityManager` avoids stale Identity Map reads (decision #1). | M3 |
+| 23  | Repository ports offer only what M3 and the next milestones plainly need (insert, finders, update, ledger append and keyset page). Row locking is added in M4 when the concurrency strategy is chosen. | Avoids deciding the concurrency strategy by accident through the port shape. | M3 |
+| 24  | `WagerTransactionRepository` returns a `PersistedWagerTransaction { transaction, balanceAfter }` and `update` takes the observed balance. | `balance_after` (decision #19) is a replay value, not part of the `WagerTransaction` entity, whose spec signatures stay unchanged. | M3 |
 
 ---
 
