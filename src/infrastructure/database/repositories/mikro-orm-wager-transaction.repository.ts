@@ -4,7 +4,11 @@ import type {
   WagerTransactionRepository,
 } from '../../../application/ports/wager-transaction.repository';
 import type { Money } from '../../../domain/shared/money';
-import type { WagerTransaction } from '../../../domain/transaction/wager-transaction';
+import {
+  type WagerTransaction,
+  WagerTransactionKind,
+  WagerTransactionStatus,
+} from '../../../domain/transaction/wager-transaction';
 import { rowToPersistedTransaction, transactionToRow } from '../mappers/wager-transaction.mapper';
 import { type WagerTransactionRow, WagerTransactionSchema } from '../rows/wager-transaction.row';
 
@@ -38,6 +42,15 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
     externalTransactionId: string,
   ): Promise<PersistedWagerTransaction | undefined> {
     return this.findOne({ providerId, externalTransactionId });
+  }
+
+  async hasProcessedReversalOf(referenceTransactionId: string): Promise<boolean> {
+    const count = await this.em.count(WagerTransactionSchema, {
+      referenceTransactionId,
+      status: WagerTransactionStatus.Processed,
+      kind: { $in: [WagerTransactionKind.Refund, WagerTransactionKind.Rollback] },
+    });
+    return count > 0;
   }
 
   async update(transaction: WagerTransaction, balanceAfter?: Money): Promise<void> {

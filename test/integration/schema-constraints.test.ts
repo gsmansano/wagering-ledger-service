@@ -214,14 +214,16 @@ describe('schema constraints (real PostgreSQL)', () => {
           ...o,
         });
 
-      it('allows only one PROCESSED reversal per reference and kind', async () => {
+      it('allows only one PROCESSED reversal per reference, whatever its kind', async () => {
         const bet = await tx(walletId);
         await reversal('REFUND', bet.id);
         await expect(reversal('REFUND', bet.id)).rejects.toThrow(
           /wager_transactions_one_reversal_per_reference/,
         );
-        // A different kind of reversal of the same reference is a separate operation.
-        await reversal('ROLLBACK', bet.id);
+        // Another kind of reversal of the same reference is refused too (decision #36).
+        await expect(reversal('ROLLBACK', bet.id)).rejects.toThrow(
+          /wager_transactions_one_reversal_per_reference/,
+        );
       });
 
       it('does not let a REJECTED reversal block a later valid one', async () => {

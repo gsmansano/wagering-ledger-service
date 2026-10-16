@@ -280,7 +280,7 @@ describe('ProcessWagerTransaction (real PostgreSQL)', () => {
       await expectNothingStored();
     });
 
-    it.each([WagerTransactionKind.Refund, WagerTransactionKind.Rollback])('%s is not supported until M5', async (kind) => {
+    it.each([WagerTransactionKind.Refund, WagerTransactionKind.Rollback])('%s whose reference has not arrived is not supported yet (pending references)', async (kind) => {
       await expect(
         process.execute(bet('10.00', { kind, referenceExternalTransactionId: 'ext-x' })),
       ).rejects.toBeInstanceOf(UnsupportedKindError);

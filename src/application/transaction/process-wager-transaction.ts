@@ -7,7 +7,12 @@ import { InvalidInputError } from '../../domain/shared/invalid-input-error';
 import { Money, type MoneyProps } from '../../domain/shared/money';
 import { payloadHash } from '../../domain/shared/payload-hash';
 import { FailureCode } from '../../domain/transaction/failure-code';
-import { WagerTransaction, WagerTransactionKind } from '../../domain/transaction/wager-transaction';
+import {
+  ReferenceReadiness,
+  referenceReadiness,
+  WagerTransaction,
+  WagerTransactionKind,
+} from '../../domain/transaction/wager-transaction';
 import { InsufficientFundsError } from '../../domain/wallet/insufficient-funds-error';
 import { LedgerDirection } from '../../domain/wallet/wallet-ledger-entry';
 import type { PersistedWagerTransaction } from '../ports/wager-transaction.repository';
@@ -52,8 +57,11 @@ export class ProcessWagerTransaction {
    * Applies a BET, WIN or LOSS in one SQL transaction (decisions #25 and #26): record the transaction
    * (idempotency), lock the wallet, apply, write the ledger entry, settle, queue the events.
    * Business rejections (insufficient funds, currency mismatch) are persisted and returned, not thrown.
+   * REFUND and ROLLBACK are checked against their reference under the wallet lock (decisions #36 to #38) and
+   * rejected with a stable failure code when the reference is unusable or the reversal would overdraw.
    * Throws, persisting nothing: InvalidInputError for an invalid payload (including OPENING and a wrong player),
-   * WalletNotFoundError, UnsupportedKindError (REFUND and ROLLBACK, M5) and IdempotencyConflictError.
+   * WalletNotFoundError, UnsupportedKindError (a reversal whose reference has not arrived or is still in
+   * flight, until the pending-reference handling lands) and IdempotencyConflictError.
    */
   async execute(command: ProcessWagerTransactionCommand): Promise<ProcessWagerTransactionResult> {
     const { unitOfWork, now, newId } = this.deps;
@@ -110,8 +118,23 @@ export class ProcessWagerTransaction {
         events.push(WagerTransactionRejected.from(transaction, context()));
       };
 
+      // For a reversal, the transaction it reverses; read under the wallet lock, so its status and any reversal
+      // of it are settled (a reference lives in this same wallet, or the checks below reject it).
+      let reference: WagerTransaction | undefined;
+      let referenceFailure: FailureCode | undefined;
+      if (money.currency === wallet.currency && transaction.requiresReference()) {
+        const found = await repos.transactions.findByProviderAndExternalId(
+          command.providerId,
+          command.referenceExternalTransactionId!, // present: requiresReference() implies it (create enforces it)
+        );
+        reference = found?.transaction;
+        referenceFailure = await this.checkReference(repos, transaction, reference);
+      }
+
       if (money.currency !== wallet.currency) {
         reject(FailureCode.CurrencyMismatch);
+      } else if (referenceFailure !== undefined) {
+        reject(referenceFailure);
       } else if (!transaction.affectsBalance()) {
         transaction.markProcessed(undefined, at);
         events.push(WagerTransactionProcessed.from(transaction, context()));
@@ -120,15 +143,18 @@ export class ProcessWagerTransaction {
         const movement = { entryId: newId(), transactionId: transaction.id, money, now: at };
         try {
           const entry =
-            transaction.ledgerDirectionFor() === LedgerDirection.Debit ? wallet.debit(movement) : wallet.credit(movement);
+            transaction.ledgerDirectionFor(reference) === LedgerDirection.Debit
+              ? wallet.debit(movement)
+              : wallet.credit(movement);
           await repos.ledger.append(entry);
           await repos.wallets.update(wallet, versionRead);
-          transaction.markProcessed(undefined, at);
+          transaction.markProcessed(reference?.id, at);
           events.push(WagerTransactionProcessed.from(transaction, context()));
           events.push(WalletBalanceChanged.from(wallet, entry, context()));
         } catch (error) {
           if (!(error instanceof InsufficientFundsError)) throw error;
-          reject(FailureCode.InsufficientFunds);
+          // A reversal that debits is undoing money already spent, which is not the same as a bet without funds.
+          reject(transaction.requiresReference() ? FailureCode.ReversalWouldOverdraw : FailureCode.InsufficientFunds);
         }
       }
 
@@ -142,9 +168,37 @@ export class ProcessWagerTransaction {
     if (kind === WagerTransactionKind.Opening) {
       throw new InvalidInputError('OPENING is internal and cannot be submitted');
     }
-    if (kind === WagerTransactionKind.Refund || kind === WagerTransactionKind.Rollback) {
-      throw new UnsupportedKindError(kind);
-    }
+  }
+
+  /**
+   * Judges the reference of a reversal at first sight (decision #38). Returns the failure code of a final
+   * rejection, or undefined when the reversal may proceed. A reference that has not arrived, or is still in
+   * flight, cannot be judged yet: that is the pending-reference case, not supported yet.
+   */
+  private async checkReference(
+    repos: Repositories,
+    reversal: WagerTransaction,
+    reference: WagerTransaction | undefined,
+  ): Promise<FailureCode | undefined> {
+    const readiness = referenceReadiness(reference);
+    if (readiness === ReferenceReadiness.Missing) throw new UnsupportedKindError(reversal.kind);
+    const target = reference!; // not Missing
+
+    const sameContext =
+      target.id !== reversal.id &&
+      target.walletId === reversal.walletId &&
+      target.playerId === reversal.playerId &&
+      target.roundId === reversal.roundId &&
+      target.money.currency === reversal.money.currency;
+    if (!sameContext) return FailureCode.ReferenceMismatch;
+    if (!reversal.canReverse(target)) return FailureCode.InvalidReferenceKind;
+
+    if (readiness === ReferenceReadiness.Waiting) throw new UnsupportedKindError(reversal.kind);
+    if (readiness === ReferenceReadiness.Unprocessable) return FailureCode.ReferenceNotProcessed;
+
+    if (!target.money.equals(reversal.money)) return FailureCode.AmountMismatch;
+    if (await repos.transactions.hasProcessedReversalOf(target.id)) return FailureCode.AlreadyReversed;
+    return undefined;
   }
 
   /**

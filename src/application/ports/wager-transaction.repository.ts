@@ -24,6 +24,8 @@ export interface WagerTransactionRepository {
     providerId: string,
     externalTransactionId: string,
   ): Promise<PersistedWagerTransaction | undefined>;
+  /** True when a PROCESSED REFUND or ROLLBACK already reverses this transaction (decision #36). */
+  hasProcessedReversalOf(referenceTransactionId: string): Promise<boolean>;
   /** Persists status, resolved reference, failure code, processedAt and the observed balance. */
   update(transaction: WagerTransaction, balanceAfter?: Money): Promise<void>;
 }

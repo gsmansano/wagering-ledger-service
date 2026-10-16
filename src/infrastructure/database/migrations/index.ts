@@ -4,6 +4,8 @@ import { Migration20261016000000_CoreSchema } from './Migration20261016000000_Co
 import { Migration20261016130000_LedgerSequence } from './Migration20261016130000_LedgerSequence';
 import { Migration20261016120000_ProviderScopedIdempotencyKey } from './Migration20261016120000_ProviderScopedIdempotencyKey';
 
+import { Migration20261016140000_OneReversalPerReference } from './Migration20261016140000_OneReversalPerReference';
+
 // Order matters: migrations are applied top to bottom.
 export const migrationsList: MigrationObject[] = [
   { name: 'Migration20261015000000_SkeletonProbe', class: Migration20261015000000_SkeletonProbe },
@@ -13,4 +15,8 @@ export const migrationsList: MigrationObject[] = [
     class: Migration20261016120000_ProviderScopedIdempotencyKey,
   },
   { name: 'Migration20261016130000_LedgerSequence', class: Migration20261016130000_LedgerSequence },
+  {
+    name: 'Migration20261016140000_OneReversalPerReference',
+    class: Migration20261016140000_OneReversalPerReference,
+  },
 ];

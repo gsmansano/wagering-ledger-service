@@ -262,6 +262,18 @@ export class WagerTransaction {
     return this.kind === WagerTransactionKind.Refund || this.kind === WagerTransactionKind.Rollback;
   }
 
+  /** Spec §7 rule 3: REFUND reverses only a BET; ROLLBACK reverses a BET, WIN or REFUND. */
+  canReverse(reference: WagerTransaction): boolean {
+    switch (this.kind) {
+      case WagerTransactionKind.Refund:
+        return reference.kind === WagerTransactionKind.Bet;
+      case WagerTransactionKind.Rollback:
+        return REVERSIBLE_KINDS.has(reference.kind);
+      default:
+        return false;
+    }
+  }
+
   matchesPayload(payloadHash: string): boolean {
     return this.payloadHash === payloadHash;
   }

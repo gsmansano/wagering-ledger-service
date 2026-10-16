@@ -77,14 +77,14 @@ select pg_temp.attempt('transaction: REJECTED without a failure code', 'refused'
 select pg_temp.attempt('transaction: unknown status', 'refused',
   $$select pg_temp.add_tx(gen_random_uuid(), 'key-7', 'ext-7', p_status => 'DONE')$$);
 
--- ---- one reversal per reference and kind -------------------------------------
+-- ---- one reversal per reference, any kind -----------------------------------------
 select pg_temp.attempt('reversal: first REFUND of the BET (control)', 'accepted',
   $$select pg_temp.add_tx(gen_random_uuid(), 'key-8', 'ext-8', 'REFUND', p_ref_ext => 'ext-1',
       p_ref_id => '00000000-0000-0000-0000-0000000000b1')$$);
 select pg_temp.attempt('reversal: second REFUND of the same BET', 'refused',
   $$select pg_temp.add_tx(gen_random_uuid(), 'key-9', 'ext-9', 'REFUND', p_ref_ext => 'ext-1',
       p_ref_id => '00000000-0000-0000-0000-0000000000b1')$$);
-select pg_temp.attempt('reversal: ROLLBACK of the same BET (other kind)', 'accepted',
+select pg_temp.attempt('reversal: ROLLBACK of the same BET (other kind)', 'refused',
   $$select pg_temp.add_tx(gen_random_uuid(), 'key-10', 'ext-10', 'ROLLBACK', p_ref_ext => 'ext-1',
       p_ref_id => '00000000-0000-0000-0000-0000000000b1')$$);
 

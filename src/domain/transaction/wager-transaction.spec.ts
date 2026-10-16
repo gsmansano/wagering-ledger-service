@@ -227,6 +227,26 @@ describe('WagerTransaction', () => {
     });
   });
 
+  describe('canReverse', () => {
+    const kinds = [Kind.Bet, Kind.Win, Kind.Loss, Kind.Refund, Kind.Rollback, Kind.Opening];
+    const target = (kind: Kind) =>
+      kind === Kind.Refund || kind === Kind.Rollback ? reversal(kind) : bet({ kind });
+
+    it('REFUND reverses only a BET', () => {
+      const accepted = kinds.filter((k) => reversal(Kind.Refund).canReverse(target(k)));
+      expect(accepted).toEqual([Kind.Bet]);
+    });
+
+    it('ROLLBACK reverses a BET, WIN or REFUND', () => {
+      const accepted = kinds.filter((k) => reversal(Kind.Rollback).canReverse(target(k)));
+      expect(accepted).toEqual([Kind.Bet, Kind.Win, Kind.Refund]);
+    });
+
+    it('kinds that are not reversals reverse nothing', () => {
+      expect(bet().canReverse(bet())).toBe(false);
+    });
+  });
+
   it('rehydrate restores state as given, without validation', () => {
     const tx = WagerTransaction.rehydrate({
       ...stateOf(bet()),

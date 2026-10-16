@@ -56,10 +56,30 @@ describe('migrations (real PostgreSQL)', () => {
     return rows[0]!.exists;
   };
 
+  const reversalIndex = async () =>
+    (
+      await orm.em
+        .getConnection()
+        .execute<{ indexdef: string }[]>(
+          `select indexdef from pg_indexes where indexname = 'wager_transactions_one_reversal_per_reference'`,
+        )
+    )[0]?.indexdef;
+
+  it('reverts the one-reversal-per-reference index to one per reference and kind, and re-applies it', async () => {
+    expect(await reversalIndex()).toContain('(reference_transaction_id)');
+
+    await orm.migrator.down();
+    expect(await reversalIndex()).toContain('(reference_transaction_id, kind)');
+
+    await orm.migrator.up();
+    expect(await reversalIndex()).toContain('(reference_transaction_id)');
+  });
+
   it('reverts the ledger sequence one step at a time and numbers existing rows when re-applied', async () => {
     expect(await columnExists('ledger_entries', 'sequence')).toBe(true);
     expect(await indexExists('ledger_entries_wallet_page')).toBe(false);
 
+    await orm.migrator.down(); // one reversal per reference
     await orm.migrator.down();
     expect(await columnExists('ledger_entries', 'sequence')).toBe(false);
     expect(await indexExists('ledger_entries_wallet_page')).toBe(true);
@@ -95,6 +115,7 @@ describe('migrations (real PostgreSQL)', () => {
   it('reverts the idempotency key scope one step further back', async () => {
     expect(await constraintExists('wager_transactions_provider_idempotency_key_key')).toBe(true);
 
+    await orm.migrator.down(); // one reversal per reference
     await orm.migrator.down(); // ledger sequence
     await orm.migrator.down(); // idempotency key scope
     for (const table of tables) expect(await tableExists(table)).toBe(true);
