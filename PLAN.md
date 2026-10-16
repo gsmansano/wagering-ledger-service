@@ -55,14 +55,14 @@ Section references (§) point to the original requirements document.
 - [x] Unit tests (§13); domain free of framework and ORM imports
 - [x] PoC: `bun run poc:domain` prints the domain rules in action (no Docker needed)
 
-## M3 — Schema and persistence — §5.9 _(current)_
+## M3 — Schema and persistence — §5.9
 
-- [ ] Migrations for all tables, with uniqueness, non-negative balance and ledger immutability enforced by the database
-- [ ] ORM mappings outside the domain; repository ports and adapters
-- [ ] Integration tests proving each constraint and migration reversibility
-- [ ] PoC: `psql` snippets that try to violate each constraint and show the database refusing them
+- [x] Migrations for all tables, with uniqueness, non-negative balance and ledger immutability enforced by the database
+- [x] ORM mappings outside the domain; repository ports and adapters
+- [x] Integration tests proving each constraint and migration reversibility
+- [x] PoC: `bun run poc:schema` runs `psql` snippets that try to violate each constraint and shows the database refusing them
 
-## M4 — Core transaction processing — §7, §8
+## M4 — Core transaction processing — §7, §8 _(current)_
 
 - [ ] Concurrency strategy chosen and logged
 - [ ] `CreateWallet` (with OPENING entry) and `ProcessWagerTransaction` for BET/WIN/LOSS in a single SQL transaction: idempotency, payload conflict detection, wallet lock, ledger, outbox
