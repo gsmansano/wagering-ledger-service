@@ -1,6 +1,8 @@
 import type { EntityManager } from '@mikro-orm/postgresql';
 import type { Repositories, UnitOfWork } from '../../../application/ports/unit-of-work';
+import { MikroOrmInboxRepository } from './mikro-orm-inbox.repository';
 import { MikroOrmLedgerRepository } from './mikro-orm-ledger.repository';
+import { MikroOrmOutboxRepository } from './mikro-orm-outbox.repository';
 import { MikroOrmWagerTransactionRepository } from './mikro-orm-wager-transaction.repository';
 import { MikroOrmWalletRepository } from './mikro-orm-wallet.repository';
 
@@ -15,6 +17,8 @@ export class MikroOrmUnitOfWork implements UnitOfWork {
         wallets: new MikroOrmWalletRepository(tx),
         transactions: new MikroOrmWagerTransactionRepository(tx),
         ledger: new MikroOrmLedgerRepository(tx),
+        inbox: new MikroOrmInboxRepository(tx),
+        outbox: new MikroOrmOutboxRepository(tx),
       }),
     );
   }

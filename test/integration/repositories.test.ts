@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import type { MikroORM } from '@mikro-orm/postgresql';
 import { MikroOrmUnitOfWork } from '../../src/infrastructure/database/repositories/mikro-orm-unit-of-work';
+import { InboxMessage } from '../../src/domain/messaging/inbox-message';
+import { OutboxMessage } from '../../src/domain/messaging/outbox-message';
+import { WalletBalanceChanged } from '../../src/domain/events/wallet-balance-changed';
 import { Money } from '../../src/domain/shared/money';
 import { FailureCode } from '../../src/domain/transaction/failure-code';
 import { WagerTransaction, WagerTransactionKind, WagerTransactionStatus } from '../../src/domain/transaction/wager-transaction';
@@ -280,6 +283,119 @@ describe('repositories (real PostgreSQL)', () => {
       ).rejects.toThrow(/wager_transactions_idempotency_key_key/);
 
       expect(await uow.run((r) => r.transactions.findById(first.id))).toBeUndefined();
+    });
+  });
+  describe('inbox', () => {
+    const receive = (messageId = 'msg-1', consumerName = 'wager-consumer') =>
+      InboxMessage.receive({ messageId, consumerName, payloadHash: 'c'.repeat(64), receivedAt: T0 });
+
+    it('round-trips a message and records when it was processed', async () => {
+      const message = receive();
+      await uow.run((r) => r.inbox.insert(message));
+
+      const stored = (await uow.run((r) => r.inbox.find('wager-consumer', 'msg-1')))!;
+      expect(stored.payloadHash).toBe('c'.repeat(64));
+      expect(stored.receivedAt).toEqual(T0);
+      expect(stored.isProcessed()).toBe(false);
+
+      message.markProcessed(at(3));
+      await uow.run((r) => r.inbox.update(message));
+      const processed = (await uow.run((r) => r.inbox.find('wager-consumer', 'msg-1')))!;
+      expect(processed.processedAt).toEqual(at(3));
+    });
+
+    it('returns undefined for an unknown message', async () => {
+      expect(await uow.run((r) => r.inbox.find('wager-consumer', 'nope'))).toBeUndefined();
+    });
+
+    it('refuses the same message twice for one consumer, but not for another', async () => {
+      await uow.run((r) => r.inbox.insert(receive()));
+      await expect(uow.run((r) => r.inbox.insert(receive()))).rejects.toThrow(/inbox_messages_pkey/);
+      await uow.run((r) => r.inbox.insert(receive('msg-1', 'other-consumer')));
+    });
+
+    it('is rolled back together with the business write', async () => {
+      const wallet = newWallet();
+      await expect(
+        uow.run(async (r) => {
+          await r.wallets.insert(wallet);
+          await r.inbox.insert(receive());
+          throw new Error('boom');
+        }),
+      ).rejects.toThrow('boom');
+      expect(await uow.run((r) => r.inbox.find('wager-consumer', 'msg-1'))).toBeUndefined();
+      expect(await uow.run((r) => r.wallets.findById(wallet.id))).toBeUndefined();
+    });
+  });
+
+  describe('outbox', () => {
+    // A real event, so the stored payload is what the publisher will send.
+    const enqueue = (): OutboxMessage => {
+      const wallet = newWallet();
+      const entry = wallet.debit({ entryId: id(), transactionId: id(), money: brl('25.00'), now: at(1) });
+      const event = WalletBalanceChanged.from(wallet, entry, {
+        eventId: id(),
+        correlationId: id(),
+        occurredAt: at(1),
+      });
+      return OutboxMessage.enqueue(event);
+    };
+
+    it('round-trips a pending message with its JSON payload intact', async () => {
+      const message = enqueue();
+      await uow.run((r) => r.outbox.insert(message));
+
+      const stored = (await uow.run((r) => r.outbox.findById(message.id)))!;
+      expect(stored.eventType).toBe('WalletBalanceChanged');
+      expect(stored.aggregateId).toBe(message.aggregateId);
+      expect(stored.occurredAt).toEqual(at(1));
+      expect(stored.payload).toEqual(message.payload);
+      // Money stays a decimal string inside the JSON, never a number.
+      expect(JSON.stringify(stored.payload)).toContain('"amount":"25.00"');
+      expect(stored.isPending()).toBe(true);
+      expect(stored.attempts).toBe(0);
+    });
+
+    it('persists a retry, then publication', async () => {
+      const message = enqueue();
+      await uow.run((r) => r.outbox.insert(message));
+
+      message.scheduleRetry(at(10));
+      await uow.run((r) => r.outbox.update(message));
+      const retried = (await uow.run((r) => r.outbox.findById(message.id)))!;
+      expect(retried.attempts).toBe(1);
+      expect(retried.nextAttemptAt).toEqual(message.nextAttemptAt);
+      expect(retried.isDue(at(10))).toBe(false);
+
+      message.markPublished(at(20));
+      await uow.run((r) => r.outbox.update(message));
+      const published = (await uow.run((r) => r.outbox.findById(message.id)))!;
+      expect(published.publishedAt).toEqual(at(20));
+      expect(published.isPending()).toBe(false);
+      expect(published.nextAttemptAt).toBeUndefined();
+    });
+
+    it('persists a parked message after too many failed attempts', async () => {
+      const message = enqueue();
+      await uow.run((r) => r.outbox.insert(message));
+      for (let i = 0; i < 20; i++) message.scheduleRetry(at(100 + i));
+      await uow.run((r) => r.outbox.update(message));
+
+      const parked = (await uow.run((r) => r.outbox.findById(message.id)))!;
+      expect(parked.isFailed()).toBe(true);
+      expect(parked.attempts).toBe(20);
+      expect(parked.isPending()).toBe(false);
+    });
+
+    it('exists only if the change it announces commits', async () => {
+      const message = enqueue();
+      await expect(
+        uow.run(async (r) => {
+          await r.outbox.insert(message);
+          throw new Error('boom');
+        }),
+      ).rejects.toThrow('boom');
+      expect(await uow.run((r) => r.outbox.findById(message.id))).toBeUndefined();
     });
   });
 });

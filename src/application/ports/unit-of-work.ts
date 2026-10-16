@@ -1,4 +1,6 @@
+import type { InboxRepository } from './inbox.repository';
 import type { LedgerRepository } from './ledger.repository';
+import type { OutboxRepository } from './outbox.repository';
 import type { WagerTransactionRepository } from './wager-transaction.repository';
 import type { WalletRepository } from './wallet.repository';
 
@@ -7,6 +9,8 @@ export interface Repositories {
   wallets: WalletRepository;
   transactions: WagerTransactionRepository;
   ledger: LedgerRepository;
+  inbox: InboxRepository;
+  outbox: OutboxRepository;
 }
 
 export interface UnitOfWork {
