@@ -34,7 +34,7 @@ bun test
 
 Configuration is read from environment variables; see `.env.example`. The SQS emulator accepts any credentials, so the app falls back to placeholder ones (`test`/`test`) when `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are not set; they are never used against real AWS.
 
-## HTTP API (so far)
+## HTTP API
 
 Authentication is a global no-op `AuthGuard` (the extension point, with the intended identity-provider design documented in its comment); health endpoints are marked `@Public()`. Errors are `{ error, message }` with a stable code.
 
@@ -76,6 +76,10 @@ For `poc:reversals`, start the app with short retry timings so the worker acts w
 PENDING_REFERENCE_POLL_MS=250 PENDING_REFERENCE_BACKOFF_BASE_MS=500 PENDING_REFERENCE_MAX_ATTEMPTS=4 bun run start
 bun run poc:reversals
 ```
+
+### Postman collection
+
+`docs/wagering-ledger-service.postman_collection.json` has one request per status class of every endpoint (27 requests in four folders), each with a status assertion. Import it, keep `baseUrl` at `http://localhost:3000` and run the collection in order: the first request creates a fresh player, so it can be run repeatedly. For the `202` request to turn into `PROCESSED` within seconds, start the app with the short retry timings above.
 
 ### Reversals waiting for their reference
 

@@ -104,15 +104,15 @@ Section references (§) point to the original requirements document.
 - [x] Tests for every reversal rule and for references arriving late
 - [x] PoC: `bun run poc:reversals` runs a curl sequence: REFUND before its BET, then the BET, and the pending transaction resolves
 
-## M6 — HTTP API — §9, §2 _(current)_
+## M6 — HTTP API — §9, §2
 
 - [x] Step 1: status table applied by one filter (decisions #43, #44), shared `TransactionView` and `X-Correlation-Id` (#45); tests per status class
 - [x] Step 2: `GET` wallet, transaction by id, transaction by provider and external id, and the cursor-paginated ledger (#46)
 - [x] Step 3: reconciliation (#47), readiness (#48), no-op `AuthGuard` with the intended design documented (#49)
-- [ ] Step 4: end-to-end tests per endpoint and per status class
-- [ ] PoC: Postman collection in `docs/` covering every endpoint
+- [x] Step 4: end-to-end tests per endpoint and per status class (`http-contract.test.ts`)
+- [x] PoC: Postman collection in `docs/` covering every endpoint
 
-## M7 — SQS consumer and inbox — §10
+## M7 — SQS consumer and inbox — §10 _(current)_
 
 - [ ] Consumer reusing the HTTP use case; persistent inbox dedup; ack only after commit
 - [ ] Business / transient / permanent error handling with retry limit and DLQ; graceful SIGTERM
