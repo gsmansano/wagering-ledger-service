@@ -144,7 +144,7 @@ describe('wagering over HTTP (real PostgreSQL + SQS emulator)', () => {
       expect(res.body.error).toBe('WALLET_NOT_FOUND');
     });
 
-    it('answers 422 for OPENING, a wrong player, an invalid amount and a kind not supported yet', async () => {
+    it('answers 422 for OPENING, a wrong player, and an invalid amount', async () => {
       const { playerId, walletId } = await newWallet('100.00');
       const key = () => ({ 'Idempotency-Key': crypto.randomUUID() });
       expect((await post('/wagering/transactions', transaction(walletId, playerId, { kind: 'OPENING' }), key())).status).toBe(422);
@@ -152,13 +152,28 @@ describe('wagering over HTTP (real PostgreSQL + SQS emulator)', () => {
       expect(
         (await post('/wagering/transactions', transaction(walletId, playerId, { money: { amount: '1.234', currency: 'BRL' } }), key())).status,
       ).toBe(422);
-      const refund = await post(
-        '/wagering/transactions',
-        transaction(walletId, playerId, { kind: 'REFUND', referenceExternalTransactionId: 'ext-x' }),
-        key(),
-      );
-      expect(refund.status).toBe(422);
-      expect(refund.body.error).toBe('UNSUPPORTED_KIND');
+    });
+
+    it('answers 202 PENDING_REFERENCE for a reversal whose reference has not arrived, and a replay stays 202 until the worker retries it', async () => {
+      const { playerId, walletId } = await newWallet('100.00');
+      const key = () => ({ 'Idempotency-Key': crypto.randomUUID() });
+      const refundKey = crypto.randomUUID();
+      const refund = transaction(walletId, playerId, {
+        kind: 'REFUND',
+        externalTransactionId: 'ext-refund',
+        referenceExternalTransactionId: 'ext-late-bet',
+      });
+
+      const pending = await post('/wagering/transactions', refund, { 'Idempotency-Key': refundKey });
+      expect(pending.status).toBe(202);
+      expect(pending.body.status).toBe('PENDING_REFERENCE');
+      expect(pending.body.balance).toBeUndefined();
+
+      const bet = await post('/wagering/transactions', transaction(walletId, playerId, { externalTransactionId: 'ext-late-bet' }), key());
+      expect(bet.status).toBe(200);
+      const again = await post('/wagering/transactions', refund, { 'Idempotency-Key': refundKey });
+      expect(again.status).toBe(202); // still parked until the worker retries it
+      expect(again.body.idempotentReplay).toBe(true);
     });
 
     it('50 parallel identical requests debit once', async () => {

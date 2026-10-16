@@ -7,7 +7,6 @@ import {
   type ProcessWagerTransactionCommand,
 } from '../../src/application/transaction/process-wager-transaction';
 import { UnresolvedConflictError } from '../../src/application/transaction/unresolved-conflict.error';
-import { UnsupportedKindError } from '../../src/application/transaction/unsupported-kind.error';
 import { CreateWallet } from '../../src/application/wallet/create-wallet';
 import { WalletNotFoundError } from '../../src/application/wallet/wallet-not-found.error';
 import { DomainError } from '../../src/domain/shared/domain-error';
@@ -277,13 +276,6 @@ describe('ProcessWagerTransaction (real PostgreSQL)', () => {
 
     it('a BET carrying a reference is an invalid payload', async () => {
       await expect(process.execute(bet('10.00', { referenceExternalTransactionId: 'ext-x' }))).rejects.toBeInstanceOf(DomainError);
-      await expectNothingStored();
-    });
-
-    it.each([WagerTransactionKind.Refund, WagerTransactionKind.Rollback])('%s whose reference has not arrived is not supported yet (pending references)', async (kind) => {
-      await expect(
-        process.execute(bet('10.00', { kind, referenceExternalTransactionId: 'ext-x' })),
-      ).rejects.toBeInstanceOf(UnsupportedKindError);
       await expectNothingStored();
     });
 

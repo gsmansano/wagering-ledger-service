@@ -26,6 +26,10 @@ export interface WagerTransactionRepository {
   ): Promise<PersistedWagerTransaction | undefined>;
   /** True when a PROCESSED REFUND or ROLLBACK already reverses this transaction (decision #36). */
   hasProcessedReversalOf(referenceTransactionId: string): Promise<boolean>;
+  /** Retries already made for a PENDING_REFERENCE transaction (decision #39); 0 for any other. */
+  referenceAttempts(transactionId: string): Promise<number>;
+  /** Records the retries made and when the next one is due (null once the transaction is settled). */
+  scheduleReferenceRetry(transactionId: string, attempts: number, nextAttemptAt: Date | null): Promise<void>;
   /** Persists status, resolved reference, failure code, processedAt and the observed balance. */
   update(transaction: WagerTransaction, balanceAfter?: Money): Promise<void>;
 }

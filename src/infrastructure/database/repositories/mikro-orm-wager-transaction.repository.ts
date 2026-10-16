@@ -53,6 +53,22 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
     return count > 0;
   }
 
+  // The retry columns are not part of the row schema (the entity does not carry them), so plain SQL.
+  async referenceAttempts(transactionId: string): Promise<number> {
+    const rows = await this.em.execute<{ reference_attempts: number }[]>(
+      'select reference_attempts from wager_transactions where id = ?',
+      [transactionId],
+    );
+    return rows[0]?.reference_attempts ?? 0;
+  }
+
+  async scheduleReferenceRetry(transactionId: string, attempts: number, nextAttemptAt: Date | null): Promise<void> {
+    await this.em.execute(
+      'update wager_transactions set reference_attempts = ?, reference_next_attempt_at = ? where id = ?',
+      [attempts, nextAttemptAt, transactionId],
+    );
+  }
+
   async update(transaction: WagerTransaction, balanceAfter?: Money): Promise<void> {
     const { status, referenceTransactionId, failureCode, balanceAfter: balance, processedAt } = transactionToRow(
       transaction,

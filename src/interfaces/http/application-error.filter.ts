@@ -1,6 +1,5 @@
 import { type ArgumentsHost, Catch, type ExceptionFilter } from '@nestjs/common';
 import { IdempotencyConflictError } from '../../application/transaction/idempotency-conflict.error';
-import { UnsupportedKindError } from '../../application/transaction/unsupported-kind.error';
 import { WalletAlreadyExistsError } from '../../application/wallet/wallet-already-exists.error';
 import { WalletNotFoundError } from '../../application/wallet/wallet-not-found.error';
 import { InvalidInputError } from '../../domain/shared/invalid-input-error';
@@ -20,13 +19,12 @@ function describe(error: Error): { status: number; code: string } {
   if (error instanceof WalletNotFoundError) return { status: 404, code: 'WALLET_NOT_FOUND' };
   if (error instanceof WalletAlreadyExistsError) return { status: 409, code: 'WALLET_ALREADY_EXISTS' };
   if (error instanceof IdempotencyConflictError) return { status: 409, code: 'IDEMPOTENCY_CONFLICT' };
-  if (error instanceof UnsupportedKindError) return { status: 422, code: 'UNSUPPORTED_KIND' };
   return { status: 422, code: 'INVALID_PAYLOAD' }; // InvalidInputError
 }
 
 // Only errors the caller can act on are listed. Any other error (a plain DomainError such as an invalid state
 // transition, UnresolvedConflictError, WalletVersionConflictError) is a bug and falls through to Nest's 500.
-@Catch(WalletNotFoundError, WalletAlreadyExistsError, IdempotencyConflictError, UnsupportedKindError, InvalidInputError)
+@Catch(WalletNotFoundError, WalletAlreadyExistsError, IdempotencyConflictError, InvalidInputError)
 export class ApplicationErrorFilter implements ExceptionFilter {
   catch(error: Error, host: ArgumentsHost): void {
     const { status, code } = describe(error);

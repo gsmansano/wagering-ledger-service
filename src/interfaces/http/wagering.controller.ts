@@ -1,6 +1,6 @@
-import { BadRequestException, Body, Controller, Headers, HttpCode, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Headers, HttpCode, Post, Res } from '@nestjs/common';
 import { ProcessWagerTransaction } from '../../application/transaction/process-wager-transaction';
-import { WagerTransactionKind } from '../../domain/transaction/wager-transaction';
+import { WagerTransactionKind, WagerTransactionStatus } from '../../domain/transaction/wager-transaction';
 import { asObject, optionalString, requiredString } from './request-parsing';
 
 const KINDS = new Set<string>(Object.values(WagerTransactionKind));
@@ -11,7 +11,11 @@ export class WageringController {
 
   @Post('transactions')
   @HttpCode(200)
-  async submit(@Headers('idempotency-key') idempotencyKey: string | undefined, @Body() body: unknown) {
+  async submit(
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) response: { status(code: number): unknown },
+  ) {
     if (idempotencyKey === undefined || idempotencyKey.trim() === '') {
       throw new BadRequestException({ error: 'MALFORMED_REQUEST', message: 'The Idempotency-Key header is required' });
     }
@@ -34,6 +38,9 @@ export class WageringController {
       money: { amount: requiredString(money, 'amount'), currency: requiredString(money, 'currency') },
       referenceExternalTransactionId: optionalString(request, 'referenceExternalTransactionId'),
     });
+
+    // Provisional (decision #41, finalized in M6): accepted, not settled yet; the same key later returns the result.
+    if (result.transaction.status === WagerTransactionStatus.PendingReference) response.status(202);
 
     return {
       transactionId: result.transaction.id,
