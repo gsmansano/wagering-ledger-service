@@ -1,4 +1,6 @@
 import type { Money } from '../../domain/shared/money';
+import type { LedgerRecord } from '../../application/ports/ledger.repository';
+import type { Wallet } from '../../domain/wallet/wallet';
 import { type WagerTransaction, WagerTransactionStatus } from '../../domain/transaction/wager-transaction';
 
 /** The one representation of a transaction in every response (decision #45). */
@@ -41,4 +43,21 @@ export function submitStatusCode(status: WagerTransactionStatus): number {
       throw new Error(`Unclassified status: ${String(unhandled)}`);
     }
   }
+}
+
+export function toWalletView(wallet: Wallet) {
+  return { id: wallet.id, playerId: wallet.playerId, balance: wallet.balance.toJSON(), version: wallet.version };
+}
+
+export function toLedgerEntryView({ entry, sequence }: LedgerRecord) {
+  return {
+    sequence,
+    id: entry.id,
+    transactionId: entry.transactionId,
+    direction: entry.direction,
+    money: entry.money.toJSON(),
+    balanceBefore: entry.balanceBefore.toJSON(),
+    balanceAfter: entry.balanceAfter.toJSON(),
+    createdAt: entry.createdAt.toISOString(),
+  };
 }

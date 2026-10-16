@@ -1,14 +1,26 @@
-import { BadRequestException, Body, Controller, Headers, HttpCode, Post, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, Post, Res } from '@nestjs/common';
+import { GetTransaction } from '../../application/query/get-transaction';
 import { ProcessWagerTransaction } from '../../application/transaction/process-wager-transaction';
 import { WagerTransactionKind } from '../../domain/transaction/wager-transaction';
-import { asObject, correlationIdFrom, optionalString, requiredString, requiredUuid } from './request-parsing';
+import { asObject, correlationIdFrom, asUuid, optionalString, requiredString, requiredUuid } from './request-parsing';
 import { submitStatusCode, toTransactionView } from './transaction-view';
 
 const KINDS = new Set<string>(Object.values(WagerTransactionKind));
 
 @Controller('wagering')
 export class WageringController {
-  constructor(private readonly processWagerTransaction: ProcessWagerTransaction) {}
+  constructor(
+    private readonly processWagerTransaction: ProcessWagerTransaction,
+    private readonly getTransaction: GetTransaction,
+  ) {}
+
+  // A read answers 200 with the stored transaction whatever its status: the status lives in the body. Only
+  // submitting a transaction maps a rejection to 422 (decision #50).
+  @Get('transactions/:transactionId')
+  async get(@Param('transactionId') transactionId: string) {
+    const { transaction, balanceAfter } = await this.getTransaction.byId(asUuid(transactionId, 'transactionId'));
+    return toTransactionView(transaction, balanceAfter);
+  }
 
   @Post('transactions')
   @HttpCode(200)

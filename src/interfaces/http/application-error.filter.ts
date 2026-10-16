@@ -1,4 +1,5 @@
 import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, Logger } from '@nestjs/common';
+import { TransactionNotFoundError } from '../../application/query/transaction-not-found.error';
 import { IdempotencyConflictError } from '../../application/transaction/idempotency-conflict.error';
 import { WalletAlreadyExistsError } from '../../application/wallet/wallet-already-exists.error';
 import { WalletNotFoundError } from '../../application/wallet/wallet-not-found.error';
@@ -12,7 +13,7 @@ interface HttpResponse {
 
 // The status table of decision #43, applied to every endpoint:
 //   400 invalid payload: malformed (HttpException from request-parsing) or well-formed but invalid (InvalidInputError)
-//   404 unknown wallet or transaction
+//   404 unknown wallet or transaction (WALLET_NOT_FOUND, TRANSACTION_NOT_FOUND)
 //   409 conflict: duplicate wallet, idempotency key or provider transaction reused with another payload
 //   503 transient infrastructure failure (decision #44), with Retry-After
 //   500 anything else: programming errors are never reported as the provider's fault, and never leak their message
@@ -30,6 +31,8 @@ export class ApplicationErrorFilter implements ExceptionFilter {
       response.status(error.getStatus()).json(error.getResponse());
     } else if (error instanceof WalletNotFoundError) {
       response.status(404).json({ error: 'WALLET_NOT_FOUND', message: error.message });
+    } else if (error instanceof TransactionNotFoundError) {
+      response.status(404).json({ error: 'TRANSACTION_NOT_FOUND', message: error.message });
     } else if (error instanceof WalletAlreadyExistsError) {
       response.status(409).json({ error: 'WALLET_ALREADY_EXISTS', message: error.message });
     } else if (error instanceof IdempotencyConflictError) {

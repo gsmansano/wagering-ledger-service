@@ -4,6 +4,9 @@ import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { EntityManager, PostgreSqlDriver } from '@mikro-orm/postgresql';
 import { UNIT_OF_WORK, type UnitOfWork } from './application/ports/unit-of-work';
 import type { ReferenceRetryPolicy } from './application/transaction/reference-retry-policy';
+import { GetLedger } from './application/query/get-ledger';
+import { GetTransaction } from './application/query/get-transaction';
+import { GetWallet } from './application/query/get-wallet';
 import { ProcessWagerTransaction } from './application/transaction/process-wager-transaction';
 import { ResolvePendingReference } from './application/transaction/resolve-pending-reference';
 import { CreateWallet } from './application/wallet/create-wallet';
@@ -15,6 +18,7 @@ import { PendingReferenceWorker } from './infrastructure/workers/pending-referen
 import { SqsModule } from './infrastructure/messaging/sqs.module';
 import { ApplicationErrorFilter } from './interfaces/http/application-error.filter';
 import { HealthController } from './interfaces/http/health.controller';
+import { ProvidersController } from './interfaces/http/providers.controller';
 import { WageringController } from './interfaces/http/wagering.controller';
 import { WalletsController } from './interfaces/http/wallets.controller';
 
@@ -30,7 +34,7 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
     }),
     SqsModule,
   ],
-  controllers: [HealthController, WalletsController, WageringController],
+  controllers: [HealthController, WalletsController, WageringController, ProvidersController],
   providers: [
     { provide: APP_FILTER, useClass: ApplicationErrorFilter },
     { provide: UNIT_OF_WORK, useFactory: (em: EntityManager) => new MikroOrmUnitOfWork(em), inject: [EntityManager] },
@@ -38,6 +42,13 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
       provide: CreateWallet,
       useFactory: (unitOfWork: UnitOfWork) =>
         new CreateWallet({ unitOfWork, now: () => new Date(), newId }),
+      inject: [UNIT_OF_WORK],
+    },
+    { provide: GetWallet, useFactory: (unitOfWork: UnitOfWork) => new GetWallet(unitOfWork), inject: [UNIT_OF_WORK] },
+    { provide: GetLedger, useFactory: (unitOfWork: UnitOfWork) => new GetLedger(unitOfWork), inject: [UNIT_OF_WORK] },
+    {
+      provide: GetTransaction,
+      useFactory: (unitOfWork: UnitOfWork) => new GetTransaction(unitOfWork),
       inject: [UNIT_OF_WORK],
     },
     {
