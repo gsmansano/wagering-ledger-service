@@ -7,7 +7,7 @@ export interface WalletRepository {
   insertIfAbsent(wallet: Wallet): Promise<boolean>;
   findById(id: string): Promise<Wallet | undefined>;
   /**
-   * Reads the wallet with `SELECT … FOR UPDATE`. Must be called inside a unit of work: the row stays locked
+   * Locks the wallet row (`FOR NO KEY UPDATE`, see the adapter) and reads it. Must be called inside a unit of work: the row stays locked
    * until it commits or rolls back, and other transactions locking the same wallet wait.
    */
   findByIdForUpdate(id: string): Promise<Wallet | undefined>;

@@ -1,4 +1,3 @@
-import { LockMode } from '@mikro-orm/core';
 import type { EntityManager } from '@mikro-orm/postgresql';
 import type { WalletRepository } from '../../../application/ports/wallet.repository';
 import type { Wallet } from '../../../domain/wallet/wallet';
@@ -29,8 +28,15 @@ export class MikroOrmWalletRepository implements WalletRepository {
     return row ? rowToWallet(row) : undefined;
   }
 
+  // FOR NO KEY UPDATE, not FOR UPDATE: it still makes writers of the same wallet queue, but it does not conflict
+  // with the FOR KEY SHARE lock that inserting a row referencing the wallet (a transaction, a ledger entry) takes.
+  // With FOR UPDATE, two requests that had both inserted their transaction row would each wait for the other's
+  // share lock and PostgreSQL would abort one with a deadlock. We never change the wallet's key, so this is enough.
   async findByIdForUpdate(id: string): Promise<Wallet | undefined> {
-    const row = await this.em.findOne(WalletSchema, { id }, { refresh: true, lockMode: LockMode.PESSIMISTIC_WRITE });
+    const locked = await this.em.execute('select id from wallets where id = ? for no key update', [id]);
+    if (locked.length === 0) return undefined;
+    // A separate statement after the lock, so it reads the latest committed row (READ COMMITTED).
+    const row = await this.em.findOne(WalletSchema, { id }, { refresh: true });
     return row ? rowToWallet(row) : undefined;
   }
 

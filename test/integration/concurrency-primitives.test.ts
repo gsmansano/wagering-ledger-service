@@ -113,6 +113,31 @@ describe('concurrency primitives (real PostgreSQL)', () => {
       expect(other).toBe('locked');
     });
 
+    it('does not deadlock with inserts that reference the wallet (the foreign-key share lock)', async () => {
+      const wallet = newWallet();
+      await uow.run((r) => r.wallets.insert(wallet));
+
+      // Both requests insert their transaction row first (taking a FOR KEY SHARE lock on the wallet through the
+      // foreign key) and only then lock the wallet. With FOR UPDATE this is a guaranteed deadlock.
+      let inserted = 0;
+      let bothInserted!: () => void;
+      const barrier = new Promise<void>((resolve) => (bothInserted = resolve));
+      const request = (key: string) =>
+        uow.run(async (r) => {
+          await r.transactions.insertIfAbsent(newBet(wallet.id, key));
+          if (++inserted === 2) bothInserted();
+          await barrier;
+          const locked = (await r.wallets.findByIdForUpdate(wallet.id))!;
+          locked.debit({ entryId: crypto.randomUUID(), transactionId: crypto.randomUUID(), money: brl('10.00'), now: NOW });
+          await r.wallets.update(locked);
+        });
+
+      await Promise.all([request('key-a'), request('key-b')]);
+
+      const final = await uow.run((r) => r.wallets.findById(wallet.id));
+      expect(final!.balance.toJSON().amount).toBe('80.00');
+    });
+
     it('returns undefined for an unknown wallet', async () => {
       expect(await uow.run((r) => r.wallets.findByIdForUpdate(crypto.randomUUID()))).toBeUndefined();
     });
