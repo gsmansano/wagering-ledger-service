@@ -10,6 +10,11 @@ export interface PersistedWagerTransaction {
 export interface WagerTransactionRepository {
   /** Fails on a duplicate id, idempotency key or (provider, external transaction id). */
   insert(transaction: WagerTransaction): Promise<void>;
+  /**
+   * Inserts unless the id, idempotency key or (provider, external transaction id) already exists; false means
+   * another delivery owns it. Unlike `insert`, a conflict does not abort the surrounding SQL transaction.
+   */
+  insertIfAbsent(transaction: WagerTransaction): Promise<boolean>;
   findById(id: string): Promise<PersistedWagerTransaction | undefined>;
   findByIdempotencyKey(idempotencyKey: string): Promise<PersistedWagerTransaction | undefined>;
   findByProviderAndExternalId(

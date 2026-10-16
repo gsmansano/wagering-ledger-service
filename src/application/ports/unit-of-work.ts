@@ -17,3 +17,6 @@ export interface UnitOfWork {
   /** Runs `work` in one SQL transaction: commits if it resolves, rolls back if it throws. */
   run<T>(work: (repositories: Repositories) => Promise<T>): Promise<T>;
 }
+
+/** Nest injection token for the `UnitOfWork` port. */
+export const UNIT_OF_WORK = Symbol('UnitOfWork');

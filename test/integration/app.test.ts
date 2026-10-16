@@ -3,6 +3,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { GetQueueAttributesCommand, GetQueueUrlCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { AppModule } from '../../src/app.module';
+import { CreateWallet } from '../../src/application/wallet/create-wallet';
 import { WAGER_DLQ, WAGER_QUEUE } from '../../src/infrastructure/messaging/queue-names';
 
 // Boots the full Nest app against real PostgreSQL and the SQS emulator.
@@ -27,6 +28,11 @@ describe('application (real PostgreSQL + SQS emulator)', () => {
     const res = await fetch(`${baseUrl}/health/live`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: 'ok' });
+  });
+
+  it('wires CreateWallet to the real unit of work', async () => {
+    const wallet = await app.get(CreateWallet).execute({ playerId: `wiring-${crypto.randomUUID()}`, currency: 'BRL' });
+    expect(wallet.balance.toJSON()).toEqual({ amount: '0.00', currency: 'BRL' });
   });
 
   it('provisions the FIFO queue with a redrive policy to the FIFO DLQ', async () => {

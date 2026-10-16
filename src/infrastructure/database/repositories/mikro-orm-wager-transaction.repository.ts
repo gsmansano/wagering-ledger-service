@@ -15,6 +15,16 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
     await this.em.insert(WagerTransactionSchema, transactionToRow(transaction));
   }
 
+  async insertIfAbsent(transaction: WagerTransaction): Promise<boolean> {
+    const result = await this.em
+      .createQueryBuilder(WagerTransactionSchema)
+      .insert(transactionToRow(transaction))
+      .onConflict()
+      .ignore()
+      .execute('run');
+    return result.affectedRows === 1;
+  }
+
   findById(id: string): Promise<PersistedWagerTransaction | undefined> {
     return this.findOne({ id });
   }

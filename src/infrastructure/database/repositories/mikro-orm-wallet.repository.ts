@@ -1,3 +1,4 @@
+import { LockMode } from '@mikro-orm/core';
 import type { EntityManager } from '@mikro-orm/postgresql';
 import type { WalletRepository } from '../../../application/ports/wallet.repository';
 import type { Wallet } from '../../../domain/wallet/wallet';
@@ -13,8 +14,23 @@ export class MikroOrmWalletRepository implements WalletRepository {
     await this.em.insert(WalletSchema, walletToRow(wallet));
   }
 
+  async insertIfAbsent(wallet: Wallet): Promise<boolean> {
+    const result = await this.em
+      .createQueryBuilder(WalletSchema)
+      .insert(walletToRow(wallet))
+      .onConflict()
+      .ignore()
+      .execute('run');
+    return result.affectedRows === 1;
+  }
+
   async findById(id: string): Promise<Wallet | undefined> {
     const row = await this.em.findOne(WalletSchema, { id }, { refresh: true });
+    return row ? rowToWallet(row) : undefined;
+  }
+
+  async findByIdForUpdate(id: string): Promise<Wallet | undefined> {
+    const row = await this.em.findOne(WalletSchema, { id }, { refresh: true, lockMode: LockMode.PESSIMISTIC_WRITE });
     return row ? rowToWallet(row) : undefined;
   }
 
