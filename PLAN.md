@@ -61,10 +61,10 @@ Section references (§) point to the original requirements document.
 | 50  | Reads answer `200` with the stored resource whatever its status (a `REJECTED` or `PENDING_REFERENCE` transaction is returned as it is, with `status` and `failureCode` in the body); only submitting a transaction maps a rejection to `422`. Unknown transaction is `404 TRANSACTION_NOT_FOUND`. The by-provider lookup is scoped by provider, so another provider's identifier never matches. Reads run through small query classes in `src/application/query/`. | `422` describes the outcome of a request, and a read request succeeded. A provider polling a pending transaction must be able to read its state without it looking like an error. | M6 |
 
 | 51  | Inbox dedup is `INSERT … ON CONFLICT DO NOTHING` (`InboxRepository.insertIfAbsent`), the first statement of the use case's own SQL transaction, requested through an optional `inbox: { consumerName, messageId }` argument of `ProcessWagerTransaction.execute`. The row is written already processed, so it exists only if the business change committed. A duplicate `(consumerName, messageId)` returns `{ duplicateMessage: true }` and the consumer acks it. The same message id with a different payload hash raises `InboxPayloadConflictError` (permanent). HTTP callers pass no inbox, so the use case stays shared. | A unique violation aborts a PostgreSQL transaction (#26), and a separate wrapper transaction would need ambient context (#22). Writing the row processed removes an update and any window where a received but unprocessed row could exist. | M7 |
-| 52  | Error classes for a message: **business** (`REJECTED`, `PENDING_REFERENCE`, replays) are final results, ack. **Transient** (`isTransientDatabaseError`, #44) and **unknown** errors are not acked and are retried through the visibility timeout, `exponentialBackoffMs(receiveCount)`; an unknown error that keeps failing reaches the DLQ through the redrive policy (`maxReceiveCount`). **Permanent** (unparseable body, wrong `type`, invalid envelope or payload, `InvalidInputError`, `WalletNotFoundError`, `IdempotencyConflictError`, `InboxPayloadConflictError`) are never retried. | Retrying cannot fix a permanent error, and acking it would lose it. An unknown error is more likely a bug than bad input, so it gets the bounded retries before parking. | M7 |
+| 52  | Error classes for a message: **business** (`REJECTED`, `PENDING_REFERENCE`, replays) are final results, ack. **Transient** (database outage or deadlock, #44) and **unknown** errors are handled alike (only the log line differs): not acked, retried through the visibility timeout, `exponentialBackoffMs(receiveCount)`; an unknown error that keeps failing reaches the DLQ through the redrive policy (`maxReceiveCount`). **Permanent** (unparseable body, wrong `type`, invalid envelope or payload, `InvalidInputError`, `WalletNotFoundError`, `IdempotencyConflictError`, `InboxPayloadConflictError`) are never retried. | Retrying cannot fix a permanent error, and acking it would lose it. An unknown error is more likely a bug than bad input, so it gets the bounded retries before parking. | M7 |
 | 53  | A permanent error is sent to the DLQ explicitly (the original body plus the error code and message as message attributes) and then deleted from the main queue; if the explicit send fails, the message is left untouched and the redrive policy still applies. | Waiting for `maxReceiveCount` receives on input that can never succeed wastes work and blocks the wallet's FIFO group meanwhile (#54). The extra code path is tested on its own. | M7 |
 | 54  | Messages are sent with `MessageGroupId = walletId`. A failing message blocks its group until it succeeds or reaches the DLQ; other wallets proceed. To be written in `ARCHITECTURE.md`. | Messages of one wallet are processed in order and wallets in parallel, matching the unit of concurrency. Blocking the group is the intended FIFO behaviour and a poison message leaves quickly through #53. | M7 |
-| 55  | Each instance long-polls up to 10 messages and processes them concurrently (`SQS_CONSUMER_CONCURRENCY`); the consumer can be switched off per instance. On SIGTERM it stops receiving, waits for in-flight messages up to a timeout and resets the visibility of any unfinished message to 0. | Every instance consumes (§8); unfinished messages return to the queue at once instead of waiting out the visibility timeout. | M7 |
+| 55  | Each instance long-polls up to 10 messages and processes them concurrently (`SQS_CONSUMER_CONCURRENCY`); the consumer can be switched off per instance. On SIGTERM it stops receiving, waits for the message being handled and hands back the ones not started, and after `SQS_SHUTDOWN_TIMEOUT_MS` resets the visibility of any unfinished message to 0. | Every instance consumes (§8); unfinished messages return to the queue at once instead of waiting out the visibility timeout. | M7 |
 
 ---
 
@@ -118,14 +118,14 @@ Section references (§) point to the original requirements document.
 - [x] Step 4: end-to-end tests per endpoint and per status class (`http-contract.test.ts`)
 - [x] PoC: Postman collection in `docs/` covering every endpoint
 
-## M7 — SQS consumer and inbox — §10 _(current)_
+## M7 — SQS consumer and inbox — §10
 
-- [ ] Consumer reusing the HTTP use case; persistent inbox dedup; ack only after commit
-- [ ] Business / transient / permanent error handling with retry limit and DLQ; graceful SIGTERM
-- [ ] Tests: redelivery, retry to DLQ, crash after commit and before ack
-- [ ] PoC: Send a message with the AWS CLI against MiniStack and watch the ledger change
+- [x] Consumer reusing the HTTP use case; persistent inbox dedup; ack only after commit
+- [x] Business / transient / permanent error handling with retry limit and DLQ; graceful SIGTERM
+- [x] Tests: redelivery, retry to DLQ, crash after commit and before ack
+- [x] PoC: Send a message with the AWS CLI against MiniStack and watch the ledger change
 
-## M8 — Transactional outbox — §11
+## M8 — Transactional outbox — §11 _(current)_
 
 - [ ] Publisher safe under concurrent instances (`FOR UPDATE SKIP LOCKED`) with retry backoff
 - [ ] Tests: concurrent publishers, crash between commit and publish

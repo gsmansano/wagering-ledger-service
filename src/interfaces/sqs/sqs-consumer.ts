@@ -21,6 +21,8 @@ export interface SqsConsumerOptions {
   pollers: number;
   /** Long-poll wait; an idle loop costs one request per this many seconds. */
   waitTimeSeconds: number;
+  /** How long `stop()` waits for messages in flight before it hands them back to the queue. */
+  shutdownTimeoutMs: number;
 }
 
 export interface MessageHandler {
@@ -37,6 +39,8 @@ const ERROR_BACKOFF_MS = 1_000;
  * Messages of one wallet (one FIFO group) are handled in order; different groups of a batch run in parallel.
  * When a message is not settled the rest of its group in the batch is released, so it is neither handled out of
  * order nor held hidden for the full visibility timeout.
+ * On shutdown (decision #55) it stops receiving, lets the message being handled finish, releases the ones not yet
+ * started and, if the wait exceeds `shutdownTimeoutMs`, hands everything unfinished back with visibility 0.
  */
 export class SqsConsumer {
   private readonly logger = new Logger(SqsConsumer.name);
@@ -44,6 +48,12 @@ export class SqsConsumer {
   private abort = new AbortController();
   private loops: Promise<void>[] = [];
   private stopped = true;
+  /** Set by `stop()`; unlike `stopped` it is false for a consumer that is driven by `pollOnce` without `start()`. */
+  private shuttingDown = false;
+  /** Received and not yet settled or released: what shutdown must hand back if it cannot wait any longer. */
+  private readonly inFlight = new Map<string, Message>();
+  /** Polls under way, whoever started them (the loops or a direct `pollOnce`): `stop()` waits for all of them. */
+  private readonly active = new Set<Promise<number>>();
 
   constructor(
     private readonly sqs: SQSClient,
@@ -62,20 +72,48 @@ export class SqsConsumer {
   start(): void {
     if (!this.stopped) return;
     this.stopped = false;
+    this.shuttingDown = false;
     this.abort = new AbortController();
     this.loops = Array.from({ length: this.options.pollers }, () => this.loop());
   }
 
-  /** Stops receiving and waits for the messages in flight to finish. */
+  /**
+   * Stops receiving, waits for the message being handled in each group, and releases the rest. If handling takes
+   * longer than the shutdown timeout the unfinished messages return to the queue at once instead of after the
+   * visibility timeout. Should such a handler still commit, the redelivery becomes a duplicate (decision #51).
+   */
   async stop(): Promise<void> {
     this.stopped = true;
+    this.shuttingDown = true;
     this.abort.abort();
-    await Promise.all(this.loops);
+    const finished = Promise.allSettled([...this.loops, ...this.active]).then(() => true);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), this.options.shutdownTimeoutMs);
+    });
+    const completed = await Promise.race([finished, timeout]);
+    clearTimeout(timer);
+    if (!completed) {
+      const pending = [...this.inFlight.values()];
+      this.logger.warn(`Shutdown timeout: handing ${pending.length} unfinished message(s) back to the queue`);
+      this.inFlight.clear();
+      await Promise.all(pending.map((message) => this.setVisibility(message, 0)));
+    }
     this.loops = [];
   }
 
   /** One receive and the handling of what it returned. Returns how many messages were received. */
   async pollOnce(): Promise<number> {
+    const poll = this.receiveAndHandle();
+    this.active.add(poll);
+    try {
+      return await poll;
+    } finally {
+      this.active.delete(poll);
+    }
+  }
+
+  private async receiveAndHandle(): Promise<number> {
     const { queue } = await this.queues();
     const { Messages = [] } = await this.sqs.send(
       new ReceiveMessageCommand({
@@ -89,6 +127,7 @@ export class SqsConsumer {
 
     const groups = new Map<string, Message[]>();
     for (const message of Messages) {
+      this.inFlight.set(message.MessageId ?? '', message);
       const key = message.Attributes?.MessageGroupId ?? message.MessageId ?? '';
       groups.set(key, [...(groups.get(key) ?? []), message]);
     }
@@ -124,11 +163,24 @@ export class SqsConsumer {
 
   private async handleGroup(group: Message[]): Promise<void> {
     for (const [index, message] of group.entries()) {
-      if (!(await this.handleOne(message))) {
-        await Promise.all(group.slice(index + 1).map((rest) => this.setVisibility(rest, 0)));
+      // Once stopped, messages not yet started go back untouched instead of lengthening the shutdown.
+      if (this.shuttingDown) {
+        await Promise.all(group.slice(index).map((m) => this.release(m)));
+        return;
+      }
+      const settled = await this.handleOne(message);
+      this.inFlight.delete(message.MessageId ?? '');
+      if (!settled) {
+        // The failed message keeps its backoff; the later ones of the wallet must not overtake it.
+        await Promise.all(group.slice(index + 1).map((m) => this.release(m)));
         return;
       }
     }
+  }
+
+  private async release(message: Message): Promise<void> {
+    this.inFlight.delete(message.MessageId ?? '');
+    await this.setVisibility(message, 0);
   }
 
   /** Returns true when the message is settled (deleted), false when it stays in the queue. */

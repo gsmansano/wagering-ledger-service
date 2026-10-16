@@ -16,7 +16,7 @@ import { CreateWallet } from '../../src/application/wallet/create-wallet';
 import { loadConfig } from '../../src/config';
 import { dlqAttributes, mainQueueAttributes } from '../../src/infrastructure/messaging/queue-attributes';
 import { MikroOrmUnitOfWork } from '../../src/infrastructure/database/repositories/mikro-orm-unit-of-work';
-import { SqsConsumer } from '../../src/interfaces/sqs/sqs-consumer';
+import { SqsConsumer, type MessageHandler } from '../../src/interfaces/sqs/sqs-consumer';
 import { WagerMessageHandler } from '../../src/interfaces/sqs/wager-message.handler';
 import { initTestOrm, truncateAll } from '../support/database';
 import { assertLedgerMatchesBalance } from '../support/ledger';
@@ -45,9 +45,20 @@ describe('SqsConsumer (real PostgreSQL and MiniStack)', () => {
   /** Faults of the client the consumer uses: a delete or a DLQ send that fails, as a crash before the ack would. */
   const faults = { deletes: 0, sendsToDlq: 0 };
 
+  /** Holds every message before it reaches the real handler, so a test can stop the consumer mid-handling. */
+  const gate = { open: Promise.resolve() as Promise<void> };
+  const closeGate = () => {
+    let release!: () => void;
+    gate.open = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return release;
+  };
+
   let orm: MikroORM;
   let flaky: FlakyUnitOfWork;
   let consumer: SqsConsumer;
+  let newConsumer: () => SqsConsumer;
   let walletId: string;
   let queueUrl: string;
   let dlqUrl: string;
@@ -150,18 +161,28 @@ describe('SqsConsumer (real PostgreSQL and MiniStack)', () => {
     queuesToDelete.push(dlqUrl, queueUrl);
 
     flaky = new FlakyUnitOfWork(uow);
-    const handler = new WagerMessageHandler(
+    gate.open = Promise.resolve();
+    const real = new WagerMessageHandler(
       new ProcessWagerTransaction({ unitOfWork: flaky, now: () => new Date(), newId: () => crypto.randomUUID() }),
       { baseMs: 100, capMs: 1_000 },
     );
-    consumer = new SqsConsumer(faulty, handler, {
-      enabled: false,
-      queueName: `consumer-test-${suffix}.fifo`,
-      dlqName: `consumer-test-dlq-${suffix}.fifo`,
-      batchSize: 10,
-      pollers: 1,
-      waitTimeSeconds: 1,
-    });
+    const handler: MessageHandler = {
+      handle: async (body, receiveCount) => {
+        await gate.open;
+        return real.handle(body, receiveCount);
+      },
+    };
+    newConsumer = () =>
+      new SqsConsumer(faulty, handler, {
+        enabled: false,
+        queueName: `consumer-test-${suffix}.fifo`,
+        dlqName: `consumer-test-dlq-${suffix}.fifo`,
+        batchSize: 10,
+        pollers: 1,
+        waitTimeSeconds: 1,
+        shutdownTimeoutMs: 500,
+      });
+    consumer = newConsumer();
   });
 
   afterEach(async () => {
@@ -341,5 +362,59 @@ describe('SqsConsumer (real PostgreSQL and MiniStack)', () => {
     const started = Date.now();
     await consumer.stop();
     expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  describe('shutdown', () => {
+    it('lets the message being handled finish and hands back the ones not started', async () => {
+      await send(messageBody('msg-1', 'ext-1', '10.00'));
+      await send(messageBody('msg-2', 'ext-2', '10.00'));
+      const open = closeGate();
+
+      const polling = consumer.pollOnce(); // msg-1 waits at the gate, msg-2 behind it
+      await sleep(300);
+      const stopping = consumer.stop();
+      open();
+      await Promise.all([polling, stopping]);
+
+      expect(await statusOf('ext-1')).toBe('PROCESSED');
+      expect(await statusOf('ext-2')).toBeUndefined();
+      // msg-1 is deleted, msg-2 is back in the queue at once (not hidden until its visibility timeout ends).
+      expect(await queueCounts(queueUrl)).toEqual({ visible: 1, inFlight: 0 });
+    });
+
+    it('hands everything back when handling outlasts the shutdown timeout', async () => {
+      await send(messageBody('msg-1', 'ext-1', '10.00'));
+      const open = closeGate();
+
+      const polling = consumer.pollOnce();
+      await sleep(300);
+      expect(await queueCounts(queueUrl)).toEqual({ visible: 0, inFlight: 1 });
+
+      const started = Date.now();
+      await consumer.stop(); // the gate never opens within the 500 ms timeout
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(await queueCounts(queueUrl)).toEqual({ visible: 1, inFlight: 0 });
+      expect(await statusOf('ext-1')).toBeUndefined();
+
+      open(); // the abandoned handler may still finish; the cleanup below must tolerate it
+      await polling;
+    });
+
+    it('a message that was handed back is processed once by the next consumer', async () => {
+      await send(messageBody('msg-1', 'ext-1', '10.00'));
+      const open = closeGate();
+      const polling = consumer.pollOnce();
+      await sleep(300);
+      await consumer.stop();
+      open();
+      await polling; // the first consumer may commit it after handing it back
+
+      consumer = newConsumer(); // the next instance
+      await pollUntil(async () => (await queueCounts(queueUrl)).visible + (await queueCounts(queueUrl)).inFlight === 0);
+
+      expect(await balanceOf()).toBe('90.00');
+      expect(await count('inbox_messages')).toBe(1);
+      await assertLedgerMatchesBalance(orm, walletId);
+    });
   });
 });

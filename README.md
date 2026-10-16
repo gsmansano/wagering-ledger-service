@@ -27,6 +27,7 @@ bun test
 | `bun run poc:domain` | Print a hands-on tour of the domain model (no Docker needed) |
 | `bun run poc:wagering` | Curl walkthrough of M4: create a wallet, BET, duplicate, overdraft, 30 parallel duplicates, then the ledger (needs the app running, see below) |
 | `bun run poc:reversals` | Curl walkthrough of M5: a REFUND before its BET is parked, the worker applies it after the BET arrives, a second reversal is refused, an orphan reversal is rejected (needs the app running with short retry timings, see below) |
+| `bun run poc:consumer` | AWS CLI walkthrough of M7: send queue messages for a BET (applied once), a duplicate (no effect) and two invalid messages (they land in the DLQ with the reason); runs `amazon/aws-cli` in Docker when `aws` is not installed (needs the app running) |
 | `bun run poc:schema` | Try to break each database constraint and show PostgreSQL refusing it (needs `docker compose up`; leaves no data) |
 | `bun run typecheck` | Type-check with `tsc --noEmit` |
 | `bun run migration:up` | Apply pending migrations |
@@ -88,6 +89,25 @@ and answers `202`. A background worker, running in every app instance, retries d
 (1s, 2s, 4s, ... capped at 5 min) up to 10 times; after that the transaction is `REJECTED` with `REFERENCE_NOT_FOUND`. Send the
 same request (same `Idempotency-Key`) to read the settled result. The worker and the limits are set through the
 `PENDING_REFERENCE_*` variables in `.env.example` (`PENDING_REFERENCE_WORKER=off` disables the worker in one instance).
+
+### Queue consumer
+
+Every instance long-polls `wager-transactions.fifo` and runs each `WagerTransactionRequested` message through the same
+use case as `POST /wagering/transactions`. Send messages with `MessageGroupId` set to the wallet id, so the messages of one
+wallet are applied in order, and an explicit `MessageDeduplicationId`.
+
+| Outcome | What the consumer does |
+|---|---|
+| Processed, rejected, pending reference, or a message already processed | Deletes the message, only after the SQL transaction committed |
+| Transient or unknown error | Keeps the message and hides it for a growing delay (1s, 2s, 4s, ... capped at 5 min); after `SQS_MAX_RECEIVE_COUNT` receives SQS moves it to the DLQ |
+| Permanent error (not JSON, wrong `type`, invalid payload, unknown wallet, idempotency conflict, message id reused with another payload) | Sends it to `wager-transactions-dlq.fifo` with `ErrorCode` and `ErrorReason` attributes, then deletes it |
+
+Redelivery is safe: the inbox row (`consumer_name`, `message_id`) is written in the same transaction as the ledger entry, so
+a message delivered twice, or redelivered after a crash between commit and ack, has no second effect. On SIGTERM an instance
+stops receiving, finishes the message it is handling, hands back the ones not started and, after
+`SQS_SHUTDOWN_TIMEOUT_MS`, hands back anything unfinished at once. `SQS_CONSUMER=off` disables the consumer in one instance;
+the other `SQS_*` variables are in `.env.example`. `bun run poc:consumer` (app running) sends messages with the AWS CLI and
+shows each outcome.
 
 ## Project layout
 

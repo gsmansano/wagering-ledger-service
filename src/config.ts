@@ -13,6 +13,7 @@ export interface AppConfig {
       waitTimeSeconds: number;
       retryBaseMs: number;
       retryCapMs: number;
+      shutdownTimeoutMs: number;
     };
   };
   /** Retry of reversals waiting for their reference (decisions #39 and #40). */
@@ -43,6 +44,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         waitTimeSeconds: Number(env.SQS_WAIT_TIME_SECONDS ?? 20),
         retryBaseMs: Number(env.SQS_RETRY_BASE_MS ?? 1_000),
         retryCapMs: Number(env.SQS_RETRY_CAP_MS ?? 300_000),
+        shutdownTimeoutMs: Number(env.SQS_SHUTDOWN_TIMEOUT_MS ?? 20_000),
       },
     },
     pendingReference: {

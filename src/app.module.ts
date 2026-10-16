@@ -107,6 +107,7 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
           batchSize: consumer.batchSize,
           pollers: consumer.pollers,
           waitTimeSeconds: consumer.waitTimeSeconds,
+          shutdownTimeoutMs: consumer.shutdownTimeoutMs,
         });
       },
       inject: [SQSClient, ProcessWagerTransaction],
