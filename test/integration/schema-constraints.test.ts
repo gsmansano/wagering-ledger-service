@@ -69,6 +69,7 @@ describe('schema constraints (real PostgreSQL)', () => {
       balance_before: '100.00',
       balance_after: '90.00',
       created_at: NOW,
+      sequence: 1,
       ...o,
     });
 
@@ -259,12 +260,24 @@ describe('schema constraints (real PostgreSQL)', () => {
       transactionId = (await tx(walletId)).id;
     });
 
+    it('refuses a repeated or non-positive sequence within a wallet, and numbers wallets independently', async () => {
+      await entry(walletId, transactionId, { sequence: 1 });
+      const second = (await tx(walletId)).id;
+      await expect(entry(walletId, second, { sequence: 1 })).rejects.toThrow(/ledger_entries_wallet_sequence_key/);
+      await expect(entry(walletId, second, { sequence: 0 })).rejects.toThrow(/ledger_entries_sequence_positive/);
+      await entry(walletId, second, { sequence: 2 });
+
+      const otherWallet = (await wallet({ player_id: 'player-2' })).id;
+      await entry(otherWallet, (await tx(otherWallet)).id, { sequence: 1 });
+    });
+
     it('accepts a balanced entry', async () => {
       await entry(walletId, transactionId);
       await entry(walletId, (await tx(walletId)).id, {
         direction: 'CREDIT',
         balance_before: '90.00',
         balance_after: '100.00',
+        sequence: 2,
       });
     });
 
@@ -356,7 +369,7 @@ describe('schema constraints (real PostgreSQL)', () => {
         expect.arrayContaining([
           'outbox_messages_due',
           'wager_transactions_pending_reference_due',
-          'ledger_entries_wallet_page',
+          'ledger_entries_wallet_sequence_key',
         ]),
       );
     });

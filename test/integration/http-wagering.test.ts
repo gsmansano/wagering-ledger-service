@@ -1,16 +1,22 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import type { INestApplication } from '@nestjs/common';
+import type { MikroORM } from '@mikro-orm/postgresql';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
+import { initTestOrm, truncateAll } from '../support/database';
 
 // The two minimal endpoints of M4 over real HTTP. The full API and its status table arrive in M6.
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 describe('wagering over HTTP (real PostgreSQL + SQS emulator)', () => {
   let app: INestApplication;
+  let orm: MikroORM;
   let baseUrl: string;
 
   beforeAll(async () => {
+    // These tests create rows through the app; start from, and leave behind, an empty database.
+    orm = await initTestOrm();
+    await truncateAll(orm);
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     await app.listen(0);
@@ -19,6 +25,8 @@ describe('wagering over HTTP (real PostgreSQL + SQS emulator)', () => {
 
   afterAll(async () => {
     await app.close();
+    await truncateAll(orm);
+    await orm.close();
   });
 
   const post = async (path: string, body: unknown, headers: Record<string, string> = {}) => {

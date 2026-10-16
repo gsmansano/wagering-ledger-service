@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import { DomainError } from './domain-error';
+import { InvalidInputError } from './invalid-input-error';
 
 export interface MoneyProps {
   amount: string;
@@ -20,10 +21,10 @@ export class Money {
   /** Parses an input contract. Rejects anything that is not a non-negative decimal with at most 2 places. */
   static from(props: MoneyProps): Money {
     if (typeof props.amount !== 'string' || !AMOUNT_PATTERN.test(props.amount)) {
-      throw new DomainError(`Invalid amount: ${JSON.stringify(props.amount)}`);
+      throw new InvalidInputError(`Invalid amount: ${JSON.stringify(props.amount)}`);
     }
     if (typeof props.currency !== 'string' || !CURRENCY_PATTERN.test(props.currency)) {
-      throw new DomainError(`Invalid currency: ${JSON.stringify(props.currency)}`);
+      throw new InvalidInputError(`Invalid currency: ${JSON.stringify(props.currency)}`);
     }
     return new Money(new Decimal(props.amount), props.currency);
   }

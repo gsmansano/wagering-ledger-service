@@ -92,13 +92,16 @@ select pg_temp.attempt('reversal: ROLLBACK of the same BET (other kind)', 'accep
 select pg_temp.attempt('ledger: balanced debit (control)', 'accepted',
   $$insert into ledger_entries values ('00000000-0000-0000-0000-0000000000c1',
       '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000b1',
-      'DEBIT', 10, 100, 90, now())$$);
+      'DEBIT', 10, 100, 90, now(), 1)$$);
 select pg_temp.attempt('ledger: entry whose arithmetic does not add up', 'refused',
   $$insert into ledger_entries values (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a1',
-      (select id from wager_transactions where idempotency_key = 'key-2'), 'DEBIT', 10, 100, 80, now())$$);
+      (select id from wager_transactions where idempotency_key = 'key-2'), 'DEBIT', 10, 100, 80, now(), 2)$$);
 select pg_temp.attempt('ledger: second entry for the same transaction and wallet', 'refused',
   $$insert into ledger_entries values (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a1',
-      '00000000-0000-0000-0000-0000000000b1', 'DEBIT', 10, 90, 80, now())$$);
+      '00000000-0000-0000-0000-0000000000b1', 'DEBIT', 10, 90, 80, now(), 2)$$);
+select pg_temp.attempt('ledger: repeated sequence within the wallet', 'refused',
+  $$insert into ledger_entries values (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a1',
+      (select id from wager_transactions where idempotency_key = 'key-2'), 'DEBIT', 10, 90, 80, now(), 1)$$);
 select pg_temp.attempt('ledger: UPDATE an entry', 'refused',
   $$update ledger_entries set amount = 1 where id = '00000000-0000-0000-0000-0000000000c1'$$);
 select pg_temp.attempt('ledger: DELETE an entry', 'refused',

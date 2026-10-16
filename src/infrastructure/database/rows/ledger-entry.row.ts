@@ -10,6 +10,8 @@ export interface LedgerEntryRow {
   balanceBefore: string;
   balanceAfter: string;
   createdAt: Date;
+  /** Position in the wallet's ledger, assigned on append. */
+  sequence: number;
 }
 
 export const LedgerEntrySchema = new EntitySchema<LedgerEntryRow>({
@@ -24,5 +26,6 @@ export const LedgerEntrySchema = new EntitySchema<LedgerEntryRow>({
     balanceBefore: { type: 'string', columnType: 'numeric(19,2)' },
     balanceAfter: { type: 'string', columnType: 'numeric(19,2)' },
     createdAt: { type: Date, columnType: 'timestamptz' },
+    sequence: { type: 'number', columnType: 'integer' },
   },
 });

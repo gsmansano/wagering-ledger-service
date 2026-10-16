@@ -1,4 +1,5 @@
 import { DomainError } from '../shared/domain-error';
+import { InvalidInputError } from '../shared/invalid-input-error';
 import { FailureCode } from './failure-code';
 import { InvalidTransactionStateError } from './invalid-transaction-state-error';
 import type { Money } from '../shared/money';
@@ -113,7 +114,7 @@ export class WagerTransaction {
   ) {}
 
   /**
-   * Starts in PENDING. Invalid payloads throw a DomainError and are never persisted:
+   * Starts in PENDING. Invalid payloads throw an InvalidInputError and are never persisted:
    * empty identifiers, a negative amount, a reference on a BET or OPENING, or a missing reference on a REFUND or ROLLBACK.
    * WIN and LOSS may carry a reference; it is kept as information and never blocks processing.
    */
@@ -130,28 +131,28 @@ export class WagerTransaction {
       gameId: props.gameId,
     };
     for (const [name, value] of Object.entries(identifiers)) {
-      if (value.trim() === '') throw new DomainError(`${name} must not be empty`);
+      if (value.trim() === '') throw new InvalidInputError(`${name} must not be empty`);
     }
     if (props.money.isNegative()) {
-      throw new DomainError(`Amount must not be negative, got ${props.money}`);
+      throw new InvalidInputError(`Amount must not be negative, got ${props.money}`);
     }
     if (props.kind !== WagerTransactionKind.Loss && !props.money.isPositive()) {
-      throw new DomainError(`${props.kind} amount must be positive, got ${props.money}`);
+      throw new InvalidInputError(`${props.kind} amount must be positive, got ${props.money}`);
     }
 
     const reference = props.referenceExternalTransactionId;
     if (reference !== undefined && reference.trim() === '') {
-      throw new DomainError('referenceExternalTransactionId must not be empty when provided');
+      throw new InvalidInputError('referenceExternalTransactionId must not be empty when provided');
     }
     const needsReference =
       props.kind === WagerTransactionKind.Refund || props.kind === WagerTransactionKind.Rollback;
     if (needsReference && reference === undefined) {
-      throw new DomainError(`${props.kind} requires referenceExternalTransactionId`);
+      throw new InvalidInputError(`${props.kind} requires referenceExternalTransactionId`);
     }
     const forbidsReference =
       props.kind === WagerTransactionKind.Bet || props.kind === WagerTransactionKind.Opening;
     if (forbidsReference && reference !== undefined) {
-      throw new DomainError(`${props.kind} must not carry referenceExternalTransactionId`);
+      throw new InvalidInputError(`${props.kind} must not carry referenceExternalTransactionId`);
     }
 
     return WagerTransaction.rehydrate({

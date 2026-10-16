@@ -205,50 +205,60 @@ describe('repositories (real PostgreSQL)', () => {
       await uow.run((r) => r.wallets.insert(wallet));
     });
 
-    it('appends entries and returns them oldest first with typed money', async () => {
+    it('appends entries and returns them in application order with typed money', async () => {
       const [first, second] = await seedEntries(2);
       const page = await uow.run((r) => r.ledger.page(wallet.id, { limit: 10 }));
 
-      expect(page.map((e) => e.id)).toEqual([first!.id, second!.id]);
-      expect(page[0]!.direction).toBe(LedgerDirection.Debit);
-      expect(page[0]!.balanceBefore.equals(brl('100.00'))).toBe(true);
-      expect(page[0]!.balanceAfter.equals(brl('90.00'))).toBe(true);
-      expect(page[1]!.balanceAfter.equals(brl('80.00'))).toBe(true);
+      expect(page.map((p) => p.entry.id)).toEqual([first!.id, second!.id]);
+      expect(page.map((p) => p.sequence)).toEqual([1, 2]);
+      expect(page[0]!.entry.direction).toBe(LedgerDirection.Debit);
+      expect(page[0]!.entry.balanceBefore.equals(brl('100.00'))).toBe(true);
+      expect(page[0]!.entry.balanceAfter.equals(brl('90.00'))).toBe(true);
+      expect(page[1]!.entry.balanceAfter.equals(brl('80.00'))).toBe(true);
     });
 
     it('pages with a keyset cursor without gaps or repeats', async () => {
       const seeded = await seedEntries(5);
       const seen: string[] = [];
-      let cursor: { createdAt: Date; id: string } | undefined;
+      let afterSequence: number | undefined;
       for (;;) {
-        const page = await uow.run((r) => r.ledger.page(wallet.id, { after: cursor, limit: 2 }));
+        const page = await uow.run((r) => r.ledger.page(wallet.id, { afterSequence, limit: 2 }));
         if (page.length === 0) break;
-        seen.push(...page.map((e) => e.id));
-        const last = page.at(-1)!;
-        cursor = { createdAt: last.createdAt, id: last.id };
+        seen.push(...page.map((p) => p.entry.id));
+        afterSequence = page.at(-1)!.sequence;
       }
       expect(seen).toEqual(seeded.map((e) => e.id));
     });
 
-    it('breaks ties on createdAt by id', async () => {
+    it('keeps the order of application when every entry has the same timestamp', async () => {
       const entries: WalletLedgerEntry[] = [];
       for (let i = 0; i < 3; i++) {
         const bet = newBet(wallet.id, '10.00');
-        // Same instant for all three entries.
+        // Same instant for all three entries; ids are random, so only the sequence can keep the order.
         entries.push(wallet.debit({ entryId: id(), transactionId: bet.id, money: brl('10.00'), now: T0 }));
         await uow.run(async (r) => {
           await r.transactions.insert(bet);
           await r.ledger.append(entries[i]!);
         });
       }
-      const expected = entries.map((e) => e.id).sort();
       const page = await uow.run((r) => r.ledger.page(wallet.id, { limit: 10 }));
-      expect(page.map((e) => e.id)).toEqual(expected);
+      expect(page.map((p) => p.entry.id)).toEqual(entries.map((e) => e.id));
 
-      const afterFirst = await uow.run((r) =>
-        r.ledger.page(wallet.id, { after: { createdAt: T0, id: expected[0]! }, limit: 10 }),
-      );
-      expect(afterFirst.map((e) => e.id)).toEqual(expected.slice(1));
+      const afterFirst = await uow.run((r) => r.ledger.page(wallet.id, { afterSequence: 1, limit: 10 }));
+      expect(afterFirst.map((p) => p.entry.id)).toEqual(entries.slice(1).map((e) => e.id));
+    });
+
+    it('numbers each wallet independently from 1', async () => {
+      await seedEntries(2);
+      const other = newWallet('50.00', 'player-2');
+      const bet = newBet(other.id, '10.00');
+      await uow.run(async (r) => {
+        await r.wallets.insert(other);
+        await r.transactions.insert(bet);
+        await r.ledger.append(other.debit({ entryId: id(), transactionId: bet.id, money: brl('10.00'), now: T0 }));
+      });
+      const page = await uow.run((r) => r.ledger.page(other.id, { limit: 10 }));
+      expect(page.map((p) => p.sequence)).toEqual([1]);
     });
 
     it('returns an empty page for an unknown wallet', async () => {

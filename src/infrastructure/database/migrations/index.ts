@@ -1,6 +1,7 @@
 import type { MigrationObject } from '@mikro-orm/core';
 import { Migration20261015000000_SkeletonProbe } from './Migration20261015000000_SkeletonProbe';
 import { Migration20261016000000_CoreSchema } from './Migration20261016000000_CoreSchema';
+import { Migration20261016130000_LedgerSequence } from './Migration20261016130000_LedgerSequence';
 import { Migration20261016120000_ProviderScopedIdempotencyKey } from './Migration20261016120000_ProviderScopedIdempotencyKey';
 
 // Order matters: migrations are applied top to bottom.
@@ -11,4 +12,5 @@ export const migrationsList: MigrationObject[] = [
     name: 'Migration20261016120000_ProviderScopedIdempotencyKey',
     class: Migration20261016120000_ProviderScopedIdempotencyKey,
   },
+  { name: 'Migration20261016130000_LedgerSequence', class: Migration20261016130000_LedgerSequence },
 ];

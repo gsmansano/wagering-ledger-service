@@ -3,7 +3,7 @@ import { WagerTransactionRejected } from '../../domain/events/wager-transaction-
 import { WalletBalanceChanged } from '../../domain/events/wallet-balance-changed';
 import type { EventContext, IntegrationEvent } from '../../domain/events/integration-event';
 import { OutboxMessage } from '../../domain/messaging/outbox-message';
-import { DomainError } from '../../domain/shared/domain-error';
+import { InvalidInputError } from '../../domain/shared/invalid-input-error';
 import { Money, type MoneyProps } from '../../domain/shared/money';
 import { payloadHash } from '../../domain/shared/payload-hash';
 import { FailureCode } from '../../domain/transaction/failure-code';
@@ -52,7 +52,7 @@ export class ProcessWagerTransaction {
    * Applies a BET, WIN or LOSS in one SQL transaction (decisions #25 and #26): record the transaction
    * (idempotency), lock the wallet, apply, write the ledger entry, settle, queue the events.
    * Business rejections (insufficient funds, currency mismatch) are persisted and returned, not thrown.
-   * Throws, persisting nothing: DomainError for an invalid payload (including OPENING and a wrong player),
+   * Throws, persisting nothing: InvalidInputError for an invalid payload (including OPENING and a wrong player),
    * WalletNotFoundError, UnsupportedKindError (REFUND and ROLLBACK, M5) and IdempotencyConflictError.
    */
   async execute(command: ProcessWagerTransactionCommand): Promise<ProcessWagerTransactionResult> {
@@ -94,7 +94,7 @@ export class ProcessWagerTransaction {
       // The first statement that touches the balance: from here to commit, other transactions on this wallet wait.
       const wallet = (await repos.wallets.findByIdForUpdate(command.walletId))!; // exists unless deleted since the read above
       if (wallet.playerId !== command.playerId) {
-        throw new DomainError(`Wallet ${wallet.id} does not belong to player ${command.playerId}`);
+        throw new InvalidInputError(`Wallet ${wallet.id} does not belong to player ${command.playerId}`);
       }
       const at = now();
       const events: IntegrationEvent<unknown>[] = [];
@@ -140,7 +140,7 @@ export class ProcessWagerTransaction {
 
   private assertSupportedKind(kind: WagerTransactionKind): void {
     if (kind === WagerTransactionKind.Opening) {
-      throw new DomainError('OPENING is internal and cannot be submitted');
+      throw new InvalidInputError('OPENING is internal and cannot be submitted');
     }
     if (kind === WagerTransactionKind.Refund || kind === WagerTransactionKind.Rollback) {
       throw new UnsupportedKindError(kind);

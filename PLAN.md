@@ -40,6 +40,8 @@ Section references (§) point to the original requirements document.
 | 31  | Minimal HTTP surface for M4: `POST /wallets` with `{ playerId, initialBalance: { currency, amount? } }` (spec shape, amount optional per #27) and `POST /wagering/transactions` with a required `Idempotency-Key` header. Provisional status mapping, finalized in M6: `400` structurally malformed (missing header, field absent or not a string, unknown `kind`), `404` unknown wallet, `409` duplicate wallet or idempotency conflict, `422` well-formed but invalid (amount, `OPENING`, wrong player, kind not supported yet). A business `REJECTED` is a `200` whose body carries `status` and `failureCode`; error bodies are `{ error, message }` with a stable code. One global `ApplicationErrorFilter` does the mapping. | Lets the PoC and the end-to-end tests run over real HTTP now, while the complete and consistent table (including rejection, pending and transient-failure statuses) is decided once in M6. | M4 |
 | 32  | The idempotency key is unique per provider: `UNIQUE (provider_id, idempotency_key)` replaces the global constraint (new migration `ProviderScopedIdempotencyKey`; the applied core migration is not edited), and lookups by key take the provider id. | The key is chosen by the provider (spec §9: the header is the source of truth, recommended default `providerId:externalTransactionId`; the scope is not specified), so two providers may use the same string without colliding, and a conflict can no longer name another provider's transaction. | M4 |
 | 33  | Ids are UUID v7 (`Bun.randomUUIDv7()` through `infrastructure/id-generator.ts`), as in the spec examples. `insertIfAbsent` names no conflict target, because PostgreSQL accepts one per statement and two rules (key, provider transaction id) must be covered; when a conflict is not explained by either lookup, `UnresolvedConflictError` is raised (a bug, mapped to 500 later), never treated as a replay. | Matches the specification and gives index locality. The typed error replaces a generic one, so an unexpected unique rule (for example a repeated internal id, or the reversal index in M5) fails loudly and testably. | M4 |
+| 34  | A wallet's ledger has an explicit order: `ledger_entries.sequence` (1, 2, 3 ... per wallet), assigned by `LedgerRepository.append` as `max + 1` while the wallet lock is held, with `UNIQUE (wallet_id, sequence)` and `CHECK (sequence > 0)`. Statements and keyset paging use it (`page(walletId, { afterSequence, limit })` returns `LedgerRecord { entry, sequence }`); the old `(created_at, id)` index is dropped. The domain entry is unchanged; the sequence is a persistence concern. Existing rows are numbered by `(created_at, id)` in the migration, which switches the immutability trigger off for that backfill only. | Timestamps have millisecond precision and the old tie-break was a random id, so two entries of one wallet in the same millisecond could be listed against the order they were applied in (reproduced with a frozen clock: the first listed entry had `balance_before` 940.00). The ledger is the audit trail of the order actually applied, and the outcome of concurrent requests depends on that order. A forgotten lock fails on the unique constraint instead of silently duplicating. | M4 |
+| 35  | Only `InvalidInputError` (a `DomainError` subclass raised for caller-supplied input: malformed amount or currency, empty identifier, reference rules at creation, `OPENING` from outside, a player who does not own the wallet) maps to `422 INVALID_PAYLOAD`. Any other error, including a plain `DomainError` such as an invalid state transition, `UnresolvedConflictError` and `WalletVersionConflictError`, is a bug and answers `500` without leaking its message. | Spec §6.3 calls an invalid transition a programming error, not a business path; reporting it as the provider's fault would hide bugs from 5xx monitoring. | M4 |
 
 ---
 
@@ -110,6 +112,7 @@ Section references (§) point to the original requirements document.
 
 - [ ] Three or more instances under mixed load on shared wallets
 - [ ] Restart mid-load with verified convergence; `balance == ledger` checked for every wallet
+- [ ] Hot-wallet experiment: more distinct requests on one wallet than the connection pool holds; measure how long requests for other wallets wait, and record the result as a documented limit
 - [ ] PoC: Script that starts several instances, applies mixed load, kills one and prints the `balance == ledger` check
 
 ## M10 — Observability — §12
@@ -117,12 +120,14 @@ Section references (§) point to the original requirements document.
 - [ ] Structured JSON logs with correlation fields and no sensitive payloads
 - [ ] Metrics: status counts, duplicates, retries, DLQ, lock conflicts, outbox lag, latency
 - [ ] Readiness reflecting PostgreSQL and SQS availability
+- [ ] Explicit connection pool size and a `lock_timeout` on the wallet lock, answered with a retryable status; lock-wait time as a metric (review finding M-2)
 
 ## M11 — Documentation and final review — §14
 
 - [ ] `README.md` (setup, commands, multi-instance run) and `ARCHITECTURE.md` (decisions, trade-offs, limitations)
 - [ ] `ARCHITECTURE.md` states the ordering semantics: concurrent requests on one wallet are applied in lock-acquisition order, not arrival order, and the ledger records the order actually applied; a provider that needs A before B must wait for A's response
 - [ ] Final review of the transaction path
+- [ ] `ARCHITECTURE.md` limitations name the hot-wallet behaviour: requests queued on one wallet each hold a connection, so a large burst on one wallet can delay others until the pool is tuned or the load is spread (SQS groups per wallet, scaling out)
 
 ## M12 — Optional extras
 

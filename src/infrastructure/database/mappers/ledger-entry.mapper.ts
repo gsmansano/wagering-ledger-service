@@ -2,7 +2,7 @@ import { Money } from '../../../domain/shared/money';
 import { WalletLedgerEntry } from '../../../domain/wallet/wallet-ledger-entry';
 import type { LedgerEntryRow } from '../rows/ledger-entry.row';
 
-export function entryToRow(entry: WalletLedgerEntry): LedgerEntryRow {
+export function entryToRow(entry: WalletLedgerEntry, sequence: number): LedgerEntryRow {
   return {
     id: entry.id,
     walletId: entry.walletId,
@@ -12,6 +12,7 @@ export function entryToRow(entry: WalletLedgerEntry): LedgerEntryRow {
     balanceBefore: entry.balanceBefore.toJSON().amount,
     balanceAfter: entry.balanceAfter.toJSON().amount,
     createdAt: entry.createdAt,
+    sequence,
   };
 }
 

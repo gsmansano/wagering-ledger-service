@@ -1,4 +1,5 @@
 import { DomainError } from '../shared/domain-error';
+import { InvalidInputError } from '../shared/invalid-input-error';
 import { InsufficientFundsError } from './insufficient-funds-error';
 import type { Money } from '../shared/money';
 import { LedgerDirection, WalletLedgerEntry } from './wallet-ledger-entry';
@@ -34,10 +35,10 @@ export class Wallet {
 
   static open(props: { id: string; playerId: string; initialBalance: Money; now: Date }): Wallet {
     if (props.playerId.trim() === '') {
-      throw new DomainError('playerId must not be empty');
+      throw new InvalidInputError('playerId must not be empty');
     }
     if (props.initialBalance.isNegative()) {
-      throw new DomainError('Initial balance must not be negative');
+      throw new InvalidInputError('Initial balance must not be negative');
     }
     return new Wallet(
       props.id,
