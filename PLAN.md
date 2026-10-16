@@ -19,6 +19,9 @@ Section references (§) point to the original requirements document.
 | 10  | `WagerTransaction` transitions: `PENDING` → any; `PENDING_REFERENCE` → `PROCESSED`/`REJECTED`/`FAILED`; terminal states → nothing (throws `InvalidTransactionStateError`). `PENDING_REFERENCE` does not transition to itself; `reject`/`fail` take a timestamp. | Retry counting and backoff belong to the M5 worker, not the entity. Passing `at` keeps the clock out of the domain (as in #8) and makes `processedAt` the time the terminal state was reached. | M2 |
 | 11  | Reference rules at creation: a `BET` or `OPENING` carrying a reference is an invalid payload (`create` throws, nothing is persisted); `REFUND`/`ROLLBACK` require one; `WIN`/`LOSS` may carry one, which is kept as information and never blocks processing (not resolved, not validated). `ledgerDirectionFor` throws for `LOSS`; cross-transaction reversal checks are deferred to M5. | Interpretation of the spec ("`WIN` can reference its `BET`"): a referenced win must not wait for a reference. `LOSS` has no ledger entry, so asking for its direction is a caller bug; callers check `affectsBalance()` first. To be noted in `ARCHITECTURE.md`. | M2 |
 | 12  | `FailureCode` taxonomy of 11 codes (see `src/domain/failure-code.ts`). `REFERENCE_NOT_PROCESSED` applies only when the reference is `REJECTED` or `FAILED`; a `PENDING`, `PENDING_REFERENCE` or missing reference means wait. Encoded in `referenceReadiness()` with an exhaustive status switch. | Reversing an unfinished transaction must not fail early: it may still become `PROCESSED`. `PROCESSING_FAILED` is exclusive to `FAILED`. | M2 |
+| 13  | Backoff is capped exponential without jitter (`min(1s × 2^(attempt−1), 5 min)`), as the shared pure function `exponentialBackoffMs`. An `OutboxMessage` is parked (`failedAt` set, never deleted) at the 20th failed publish attempt (about an hour of retrying); parked messages are neither pending nor due and can be requeued by an operator. | Jitter would need an injected random source and is unnecessary because each row is claimed by one publisher at a time. A bounded retry stops a poison event from retrying forever; parking keeps it auditable. Parked events become a metric in M10. Whether a parked event blocks later events of the same wallet is decided in M8. | M2 |
+| 14  | Payload hash: SHA-256 (hex) of the canonical JSON (keys sorted recursively, no whitespace) of `providerId`, `externalTransactionId`, `playerId`, `walletId`, `roundId`, `gameId`, `kind`, `money` (normalized to scale 2) and `referenceExternalTransactionId` when present. The `Idempotency-Key` header and transport metadata are excluded. | Equal business payloads hash equally regardless of key order or `"25.5"` vs `"25.50"`; the key is what the hash is compared against, and metadata changes between deliveries. To be documented in `ARCHITECTURE.md`. | M2 |
+| 15  | Integration events: `aggregateId` is the `walletId` on all four; the outbox row id is the event id; `data` carries `MoneyProps`, never `Money`. Ids and time arrive through an `EventContext`. | The wallet is the unit of ordering and concurrency; the event id gives consumers a deduplication key. | M2 |
 
 ---
 
@@ -36,14 +39,14 @@ Section references (§) point to the original requirements document.
 
 **Done when:** a clean clone runs `docker compose up` and `bun test` green.
 
-## M2 — Domain model — §6 _(current)_
+## M2 — Domain model — §6
 
-- [ ] `Money`, `Wallet`, `WagerTransaction`, `WalletLedgerEntry`, `InboxMessage`, `OutboxMessage`
-- [ ] `IntegrationEvent` hierarchy (4 events), `FailureCode` taxonomy, canonical payload hash
-- [ ] Unit tests (§13); domain free of framework and ORM imports
-- [ ] PoC: `bun run poc:domain` prints the domain rules in action (no Docker needed)
+- [x] `Money`, `Wallet`, `WagerTransaction`, `WalletLedgerEntry`, `InboxMessage`, `OutboxMessage`
+- [x] `IntegrationEvent` hierarchy (4 events), `FailureCode` taxonomy, canonical payload hash
+- [x] Unit tests (§13); domain free of framework and ORM imports
+- [x] PoC: `bun run poc:domain` prints the domain rules in action (no Docker needed)
 
-## M3 — Schema and persistence — §5.9
+## M3 — Schema and persistence — §5.9 _(current)_
 
 - [ ] Migrations for all tables, with uniqueness, non-negative balance and ledger immutability enforced by the database
 - [ ] ORM mappings outside the domain; repository ports and adapters

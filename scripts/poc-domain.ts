@@ -1,7 +1,13 @@
 // Hands-on tour of the domain model. Run with: bun run poc:domain
 // Needs no database or Docker. Extended as each domain class lands.
 import { DomainError } from '../src/domain/domain-error';
+import { exponentialBackoffMs } from '../src/domain/backoff';
+import { canonicalJson } from '../src/domain/canonical-json';
+import { WalletBalanceChanged } from '../src/domain/events/wallet-balance-changed';
+import { InboxMessage } from '../src/domain/inbox-message';
 import { Money } from '../src/domain/money';
+import { OutboxMessage } from '../src/domain/outbox-message';
+import { payloadHash } from '../src/domain/payload-hash';
 import { FailureCode } from '../src/domain/failure-code';
 import { Wallet } from '../src/domain/wallet';
 import { LedgerDirection, WalletLedgerEntry } from '../src/domain/wallet-ledger-entry';
@@ -105,3 +111,31 @@ console.log(`reference PROCESSED:          ${referenceReadiness(ref)}`);
 const dead = mk(WagerTransactionKind.Bet);
 dead.reject(FailureCode.InsufficientFunds, new Date());
 console.log(`reference REJECTED:           ${referenceReadiness(dead)}`);
+
+section('Payload hash: same business payload, same hash');
+const payload = { providerId: 'prov', externalTransactionId: 'ext1', playerId: 'p1', walletId: 'w1', roundId: 'r1', gameId: 'g1', kind: WagerTransactionKind.Bet, money: { amount: '25.5', currency: 'BRL' } };
+console.log(`canonical: ${canonicalJson({ b: 2, a: { d: 1, c: 0 } })}`);
+console.log(`hash       "25.5":   ${payloadHash(payload)}`);
+console.log(`hash       "25.50":  ${payloadHash({ ...payload, money: { amount: '25.50', currency: 'BRL' } })}`);
+console.log(`hash       "26.00":  ${payloadHash({ ...payload, money: { amount: '26.00', currency: 'BRL' } })}`);
+
+section('Inbox: a message is processed once');
+const inbox = InboxMessage.receive({ messageId: 'm1', consumerName: 'wagering', payloadHash: 'h', receivedAt: new Date() });
+inbox.markProcessed(new Date());
+attempt('markProcessed a second time', () => inbox.markProcessed(new Date()));
+
+section('Outbox: event, backoff and parking');
+const outWallet = Wallet.open({ id: 'w1', playerId: 'p1', initialBalance: brl('100.00'), now: new Date() });
+const outEntry = outWallet.debit({ entryId: 'e1', transactionId: 't1', money: brl('25.00'), now: new Date() });
+const event = WalletBalanceChanged.from(outWallet, outEntry, { eventId: 'ev1', correlationId: 'c1', occurredAt: new Date() });
+console.log(JSON.stringify(event, null, 2));
+const outbox = OutboxMessage.enqueue(event);
+const start = new Date();
+console.log('delay before each retry (s):', Array.from({ length: 12 }, (_, i) => exponentialBackoffMs(i + 1, 1_000, 300_000) / 1_000).join(', '));
+for (let i = 1; i <= 20; i++) {
+  outbox.scheduleRetry(start);
+  if (i === 1 || i === 19 || i === 20) {
+    console.log(`after failure ${String(i).padStart(2)}: attempts=${outbox.attempts} pending=${outbox.isPending()} parked=${outbox.isFailed()}`);
+  }
+}
+attempt('markPublished on a parked message', () => outbox.markPublished(new Date()));
