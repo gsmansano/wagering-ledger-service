@@ -26,6 +26,17 @@ export interface WagerTransactionRepository {
   ): Promise<PersistedWagerTransaction | undefined>;
   /** True when a PROCESSED REFUND or ROLLBACK already reverses this transaction (decision #36). */
   hasProcessedReversalOf(referenceTransactionId: string): Promise<boolean>;
+  /**
+   * Locks the row of a PENDING_REFERENCE transaction until the end of the SQL transaction, waiting if another
+   * holds it. False when it is not (or no longer) PENDING_REFERENCE.
+   */
+  lockPendingReference(transactionId: string): Promise<boolean>;
+  /**
+   * Locks, skipping rows other instances hold (`FOR UPDATE SKIP LOCKED`), the PENDING_REFERENCE transaction whose
+   * retry has been due the longest, and returns its id; undefined when none is due. Several instances can poll
+   * the same table without picking the same row.
+   */
+  lockNextDuePendingReference(now: Date): Promise<string | undefined>;
   /** Retries already made for a PENDING_REFERENCE transaction (decision #39); 0 for any other. */
   referenceAttempts(transactionId: string): Promise<number>;
   /** Records the retries made and when the next one is due (null once the transaction is settled). */

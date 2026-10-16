@@ -53,6 +53,26 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
     return count > 0;
   }
 
+  async lockPendingReference(transactionId: string): Promise<boolean> {
+    const rows = await this.em.execute(
+      `select id from wager_transactions where id = ? and status = 'PENDING_REFERENCE' for update`,
+      [transactionId],
+    );
+    return rows.length > 0;
+  }
+
+  async lockNextDuePendingReference(now: Date): Promise<string | undefined> {
+    const rows = await this.em.execute<{ id: string }[]>(
+      `select id from wager_transactions
+        where status = 'PENDING_REFERENCE' and reference_next_attempt_at <= ?
+        order by reference_next_attempt_at
+        limit 1
+        for update skip locked`,
+      [now],
+    );
+    return rows[0]?.id;
+  }
+
   // The retry columns are not part of the row schema (the entity does not carry them), so plain SQL.
   async referenceAttempts(transactionId: string): Promise<number> {
     const rows = await this.em.execute<{ reference_attempts: number }[]>(

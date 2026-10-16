@@ -3,7 +3,7 @@ import type { IntegrationEvent } from '../../domain/events/integration-event';
 import { OutboxMessage } from '../../domain/messaging/outbox-message';
 import { FailureCode } from '../../domain/transaction/failure-code';
 import { type WagerTransaction, WagerTransactionStatus } from '../../domain/transaction/wager-transaction';
-import type { UnitOfWork } from '../ports/unit-of-work';
+import type { Repositories, UnitOfWork } from '../ports/unit-of-work';
 import { ApplyOutcome, applyUnderLock } from './apply-transaction';
 import {
   DEFAULT_REFERENCE_RETRY_POLICY,
@@ -34,60 +34,71 @@ export interface ResolvePendingReferenceDeps {
 
 /**
  * One retry of a PENDING_REFERENCE reversal (decisions #39 and #40), under the same wallet lock and apply path as
- * a first delivery. It does not look at the due time: choosing which rows to retry is the worker's job.
- * Safe to call from several instances: the status is re-read under the wallet lock, so a transaction another
+ * a first delivery. Lock order is always the transaction row, then the wallet, so concurrent instances cannot
+ * deadlock on each other; the row lock also makes the status read afterwards authoritative: a transaction another
  * instance already settled is reported as `NotPending`.
  */
 export class ResolvePendingReference {
   constructor(private readonly deps: ResolvePendingReferenceDeps) {}
 
-  async execute(transactionId: string): Promise<ResolvePendingReferenceResult> {
-    const { unitOfWork, now, newId } = this.deps;
+  /** Retries one given transaction whether or not it is due (waits if another instance is retrying it). */
+  execute(transactionId: string): Promise<ResolvePendingReferenceResult> {
+    return this.deps.unitOfWork.run(async (repos) => {
+      if (!(await repos.transactions.lockPendingReference(transactionId))) {
+        return { outcome: ResolveOutcome.NotPending, transaction: (await repos.transactions.findById(transactionId))?.transaction };
+      }
+      return this.retry(repos, transactionId);
+    });
+  }
+
+  /**
+   * Retries the pending transaction that has been due the longest and that no other instance is working on
+   * (`SKIP LOCKED`). Undefined when nothing is due: the worker's cue to sleep.
+   */
+  executeNextDue(): Promise<ResolvePendingReferenceResult | undefined> {
+    return this.deps.unitOfWork.run(async (repos) => {
+      const id = await repos.transactions.lockNextDuePendingReference(this.deps.now());
+      return id === undefined ? undefined : this.retry(repos, id);
+    });
+  }
+
+  /** The row of `transactionId` is locked and was PENDING_REFERENCE a moment ago. */
+  private async retry(repos: Repositories, transactionId: string): Promise<ResolvePendingReferenceResult> {
+    const { now, newId } = this.deps;
     const policy = this.deps.referenceRetry ?? DEFAULT_REFERENCE_RETRY_POLICY;
 
-    return unitOfWork.run(async (repos) => {
-      // Unlocked read, only to learn which wallet to lock; the decision is taken on the re-read below.
-      const peek = await repos.transactions.findById(transactionId);
-      if (peek === undefined || peek.transaction.status !== WagerTransactionStatus.PendingReference) {
-        return { outcome: ResolveOutcome.NotPending, transaction: peek?.transaction };
-      }
+    const transaction = (await repos.transactions.findById(transactionId))!.transaction; // locked, so it exists
+    if (transaction.status !== WagerTransactionStatus.PendingReference) {
+      return { outcome: ResolveOutcome.NotPending, transaction };
+    }
+    const wallet = (await repos.wallets.findByIdForUpdate(transaction.walletId))!; // the foreign key keeps it
 
-      const wallet = (await repos.wallets.findByIdForUpdate(peek.transaction.walletId))!; // the foreign key keeps it
-      const locked = (await repos.transactions.findById(transactionId))!; // exists: read above
-      const transaction = locked.transaction;
-      if (transaction.status !== WagerTransactionStatus.PendingReference) {
-        return { outcome: ResolveOutcome.NotPending, transaction };
-      }
+    const at = now();
+    const attempts = (await repos.transactions.referenceAttempts(transactionId)) + 1;
+    const events: IntegrationEvent<unknown>[] = [];
+    const context = { at, newId, correlationId: newId() };
+    const outcome = await applyUnderLock(repos, transaction, wallet, context, events);
 
-      const at = now();
-      const attempts = (await repos.transactions.referenceAttempts(transactionId)) + 1;
-      const events: IntegrationEvent<unknown>[] = [];
-      const context = { at, newId, correlationId: newId() };
-      let outcome = await applyUnderLock(repos, transaction, wallet, context, events);
-
-      if (outcome === ApplyOutcome.Waiting && attempts < policy.maxAttempts) {
+    if (outcome === ApplyOutcome.Waiting) {
+      if (attempts < policy.maxAttempts) {
         await repos.transactions.scheduleReferenceRetry(transactionId, attempts, referenceRetryAt(policy, attempts + 1, at));
         return { outcome: ResolveOutcome.StillWaiting, transaction };
       }
+      // Retry limit reached: the reference never became usable (decision #39).
+      transaction.reject(FailureCode.ReferenceNotFound, at);
+      events.push(
+        WagerTransactionRejected.from(transaction, {
+          eventId: newId(),
+          correlationId: context.correlationId,
+          causationId: transaction.id,
+          occurredAt: at,
+        }),
+      );
+    }
 
-      if (outcome === ApplyOutcome.Waiting) {
-        // Retry limit reached: the reference never became usable (decision #39).
-        transaction.reject(FailureCode.ReferenceNotFound, at);
-        events.push(
-          WagerTransactionRejected.from(transaction, {
-            eventId: newId(),
-            correlationId: context.correlationId,
-            causationId: transaction.id,
-            occurredAt: at,
-          }),
-        );
-        outcome = ApplyOutcome.Settled;
-      }
-
-      await repos.transactions.update(transaction, wallet.balance);
-      await repos.transactions.scheduleReferenceRetry(transactionId, attempts, null);
-      for (const event of events) await repos.outbox.insert(OutboxMessage.enqueue(event));
-      return { outcome: ResolveOutcome.Settled, transaction };
-    });
+    await repos.transactions.update(transaction, wallet.balance);
+    await repos.transactions.scheduleReferenceRetry(transactionId, attempts, null);
+    for (const event of events) await repos.outbox.insert(OutboxMessage.enqueue(event));
+    return { outcome: ResolveOutcome.Settled, transaction };
   }
 }

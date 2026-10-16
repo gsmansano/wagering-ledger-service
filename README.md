@@ -26,6 +26,7 @@ bun test
 | `bun test` | Unit and integration tests (requires `postgres` and `ministack` running) |
 | `bun run poc:domain` | Print a hands-on tour of the domain model (no Docker needed) |
 | `bun run poc:wagering` | Curl walkthrough of M4: create a wallet, BET, duplicate, overdraft, 30 parallel duplicates, then the ledger (needs the app running, see below) |
+| `bun run poc:reversals` | Curl walkthrough of M5: a REFUND before its BET is parked, the worker applies it after the BET arrives, a second reversal is refused, an orphan reversal is rejected (needs the app running with short retry timings, see below) |
 | `bun run poc:schema` | Try to break each database constraint and show PostgreSQL refusing it (needs `docker compose up`; leaves no data) |
 | `bun run typecheck` | Type-check with `tsc --noEmit` |
 | `bun run migration:up` | Apply pending migrations |
@@ -46,6 +47,21 @@ Minimal endpoints of M4; the full API and its status table arrive in M6.
 docker compose up -d postgres ministack migrate && bun run start   # in one terminal
 bun run poc:wagering                                                                      # in another
 ```
+
+For `poc:reversals`, start the app with short retry timings so the worker acts within seconds:
+
+```bash
+PENDING_REFERENCE_POLL_MS=250 PENDING_REFERENCE_BACKOFF_BASE_MS=500 PENDING_REFERENCE_MAX_ATTEMPTS=4 bun run start
+bun run poc:reversals
+```
+
+### Reversals waiting for their reference
+
+A REFUND or ROLLBACK whose referenced transaction has not arrived (or is itself still pending) is stored as `PENDING_REFERENCE`
+and answers `202`. A background worker, running in every app instance, retries due rows with exponential backoff
+(1s, 2s, 4s, ... capped at 5 min) up to 10 times; after that the transaction is `REJECTED` with `REFERENCE_NOT_FOUND`. Send the
+same request (same `Idempotency-Key`) to read the settled result. The worker and the limits are set through the
+`PENDING_REFERENCE_*` variables in `.env.example` (`PENDING_REFERENCE_WORKER=off` disables the worker in one instance).
 
 ## Project layout
 

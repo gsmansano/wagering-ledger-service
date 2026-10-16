@@ -3,6 +3,7 @@ import { APP_FILTER } from '@nestjs/core';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { EntityManager, PostgreSqlDriver } from '@mikro-orm/postgresql';
 import { UNIT_OF_WORK, type UnitOfWork } from './application/ports/unit-of-work';
+import type { ReferenceRetryPolicy } from './application/transaction/reference-retry-policy';
 import { ProcessWagerTransaction } from './application/transaction/process-wager-transaction';
 import { ResolvePendingReference } from './application/transaction/resolve-pending-reference';
 import { CreateWallet } from './application/wallet/create-wallet';
@@ -10,11 +11,14 @@ import { loadConfig } from './config';
 import { createOrmConfig } from './infrastructure/database/mikro-orm.config';
 import { newId } from './infrastructure/id-generator';
 import { MikroOrmUnitOfWork } from './infrastructure/database/repositories/mikro-orm-unit-of-work';
+import { PendingReferenceWorker } from './infrastructure/workers/pending-reference.worker';
 import { SqsModule } from './infrastructure/messaging/sqs.module';
 import { ApplicationErrorFilter } from './interfaces/http/application-error.filter';
 import { HealthController } from './interfaces/http/health.controller';
 import { WageringController } from './interfaces/http/wagering.controller';
 import { WalletsController } from './interfaces/http/wallets.controller';
+
+const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
 
 @Module({
   imports: [
@@ -37,16 +41,31 @@ import { WalletsController } from './interfaces/http/wallets.controller';
       inject: [UNIT_OF_WORK],
     },
     {
+      provide: REFERENCE_RETRY,
+      useFactory: (): ReferenceRetryPolicy => {
+        const { maxAttempts, backoffBaseMs, backoffCapMs } = loadConfig().pendingReference;
+        return { maxAttempts, baseMs: backoffBaseMs, capMs: backoffCapMs };
+      },
+    },
+    {
       provide: ProcessWagerTransaction,
-      useFactory: (unitOfWork: UnitOfWork) =>
-        new ProcessWagerTransaction({ unitOfWork, now: () => new Date(), newId }),
-      inject: [UNIT_OF_WORK],
+      useFactory: (unitOfWork: UnitOfWork, referenceRetry: ReferenceRetryPolicy) =>
+        new ProcessWagerTransaction({ unitOfWork, now: () => new Date(), newId, referenceRetry }),
+      inject: [UNIT_OF_WORK, REFERENCE_RETRY],
     },
     {
       provide: ResolvePendingReference,
-      useFactory: (unitOfWork: UnitOfWork) =>
-        new ResolvePendingReference({ unitOfWork, now: () => new Date(), newId }),
-      inject: [UNIT_OF_WORK],
+      useFactory: (unitOfWork: UnitOfWork, referenceRetry: ReferenceRetryPolicy) =>
+        new ResolvePendingReference({ unitOfWork, now: () => new Date(), newId, referenceRetry }),
+      inject: [UNIT_OF_WORK, REFERENCE_RETRY],
+    },
+    {
+      provide: PendingReferenceWorker,
+      useFactory: (resolvePending: ResolvePendingReference) => {
+        const { workerEnabled, pollIntervalMs, batchSize } = loadConfig().pendingReference;
+        return new PendingReferenceWorker(resolvePending, { enabled: workerEnabled, pollIntervalMs, batchSize });
+      },
+      inject: [ResolvePendingReference],
     },
   ],
 })

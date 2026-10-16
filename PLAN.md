@@ -48,6 +48,7 @@ Section references (§) point to the original requirements document.
 | 39  | Pending references are retried up to 10 attempts with `exponentialBackoffMs` (1s, 2s, 4s … capped at 5 min, about 15 minutes in total), then rejected with `REFERENCE_NOT_FOUND` and `WagerTransactionRejected`. Limit and poll interval are configurable. | Covers an out-of-order delivery within a provider session and stays bounded for an orphaned reversal. | M5 |
 | 40  | A pending reversal is resolved by the worker's backoff, under the same wallet lock and apply path as a first attempt; arrival of the reference does not trigger it eagerly. | Keeps one code path and no cross-transaction wake-up; the cost is a delay of up to the current backoff interval. | M5 |
 | 41  | A transaction left `PENDING_REFERENCE` answers `202` with `status: PENDING_REFERENCE` (provisional, finalized in M6). | The provider must not treat it as final nor resend it as new; the same key later returns the settled result. | M5 |
+| 42  | The worker claims one due row per SQL transaction with `SELECT … FOR UPDATE SKIP LOCKED` and retries it in that same transaction; lock order is always the pending row, then the wallet. A direct retry (`execute(id)`) also locks the row first. Polling interval, batch size, retry limit and backoff are environment variables (`PENDING_REFERENCE_*`); the worker runs in every instance and can be switched off per instance. | `SKIP LOCKED` lets instances share the table without waiting for or duplicating each other; claiming and retrying in one transaction means a crash releases the row untouched. A fixed lock order rules out a deadlock between a worker (holding the row) and another retry (holding the wallet), and makes the status read after the row lock authoritative. | M5 |
 
 ---
 
@@ -86,14 +87,14 @@ Section references (§) point to the original requirements document.
 - [x] Concurrency tests: 50 parallel duplicates, the 100.00 vs 2 × 80.00 race, parallel wallets
 - [x] PoC: `bun run poc:wagering` runs a curl sequence: create a wallet, BET, duplicate BET, overdraft, 30 parallel duplicates, ledger
 
-## M5 — Reversals and out-of-order references — §7, §7.1 _(current)_
+## M5 — Reversals and out-of-order references — §7, §7.1
 
-- [ ] REFUND / ROLLBACK rules, including the reversal-would-go-negative case
-- [ ] `PENDING_REFERENCE` handling with a backoff worker and a terminal rejection after the retry limit
-- [ ] Tests for every reversal rule and for references arriving late
-- [ ] PoC: curl sequence: REFUND before its BET, then the BET, and the pending transaction resolves
+- [x] REFUND / ROLLBACK rules, including the reversal-would-go-negative case
+- [x] `PENDING_REFERENCE` handling with a backoff worker and a terminal rejection after the retry limit
+- [x] Tests for every reversal rule and for references arriving late
+- [x] PoC: `bun run poc:reversals` runs a curl sequence: REFUND before its BET, then the BET, and the pending transaction resolves
 
-## M6 — HTTP API — §9, §2
+## M6 — HTTP API — §9, §2 _(current)_
 
 - [ ] All endpoints, including cursor-paginated ledger, reconciliation and readiness
 - [ ] Consistent HTTP status mapping (logged), including a dedicated status for a business rejection (M4 returns 200, decision #31) and `500` for programming errors such as invalid state transitions (today every `DomainError` maps to `422`); `Idempotency-Key` enforcement
