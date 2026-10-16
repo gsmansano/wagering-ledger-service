@@ -18,8 +18,10 @@ import { newId } from './infrastructure/id-generator';
 import { MikroOrmUnitOfWork } from './infrastructure/database/repositories/mikro-orm-unit-of-work';
 import { ReadinessService } from './infrastructure/readiness.service';
 import { PendingReferenceWorker } from './infrastructure/workers/pending-reference.worker';
-import { WAGER_QUEUE } from './infrastructure/messaging/queue-names';
+import { WAGER_DLQ, WAGER_QUEUE } from './infrastructure/messaging/queue-names';
 import { SqsModule } from './infrastructure/messaging/sqs.module';
+import { SqsConsumer } from './interfaces/sqs/sqs-consumer';
+import { WagerMessageHandler } from './interfaces/sqs/wager-message.handler';
 import { AuthGuard } from './interfaces/http/auth/auth.guard';
 import { ApplicationErrorFilter } from './interfaces/http/application-error.filter';
 import { HealthController } from './interfaces/http/health.controller';
@@ -92,6 +94,22 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
       useFactory: (unitOfWork: UnitOfWork, referenceRetry: ReferenceRetryPolicy) =>
         new ResolvePendingReference({ unitOfWork, now: () => new Date(), newId, referenceRetry }),
       inject: [UNIT_OF_WORK, REFERENCE_RETRY],
+    },
+    {
+      provide: SqsConsumer,
+      useFactory: (sqs: SQSClient, processTransaction: ProcessWagerTransaction) => {
+        const { consumer } = loadConfig().sqs;
+        const handler = new WagerMessageHandler(processTransaction, { baseMs: consumer.retryBaseMs, capMs: consumer.retryCapMs });
+        return new SqsConsumer(sqs, handler, {
+          enabled: consumer.enabled,
+          queueName: WAGER_QUEUE,
+          dlqName: WAGER_DLQ,
+          batchSize: consumer.batchSize,
+          pollers: consumer.pollers,
+          waitTimeSeconds: consumer.waitTimeSeconds,
+        });
+      },
+      inject: [SQSClient, ProcessWagerTransaction],
     },
     {
       provide: PendingReferenceWorker,

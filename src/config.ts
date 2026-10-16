@@ -5,6 +5,15 @@ export interface AppConfig {
     endpoint: string;
     region: string;
     maxReceiveCount: number;
+    /** The queue consumer (decisions #52 to #55). */
+    consumer: {
+      enabled: boolean;
+      batchSize: number;
+      pollers: number;
+      waitTimeSeconds: number;
+      retryBaseMs: number;
+      retryCapMs: number;
+    };
   };
   /** Retry of reversals waiting for their reference (decisions #39 and #40). */
   pendingReference: {
@@ -27,6 +36,14 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       endpoint: env.SQS_ENDPOINT ?? 'http://localhost:4566',
       region: env.AWS_REGION ?? 'us-east-1',
       maxReceiveCount: Number(env.SQS_MAX_RECEIVE_COUNT ?? 5),
+      consumer: {
+        enabled: (env.SQS_CONSUMER ?? 'on') !== 'off',
+        batchSize: Number(env.SQS_CONSUMER_BATCH_SIZE ?? 10),
+        pollers: Number(env.SQS_CONSUMER_CONCURRENCY ?? 1),
+        waitTimeSeconds: Number(env.SQS_WAIT_TIME_SECONDS ?? 20),
+        retryBaseMs: Number(env.SQS_RETRY_BASE_MS ?? 1_000),
+        retryCapMs: Number(env.SQS_RETRY_CAP_MS ?? 300_000),
+      },
     },
     pendingReference: {
       workerEnabled: (env.PENDING_REFERENCE_WORKER ?? 'on') !== 'off',
