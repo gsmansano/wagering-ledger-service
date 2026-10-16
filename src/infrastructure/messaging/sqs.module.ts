@@ -9,8 +9,18 @@ import { QueueProvisioner } from './queue-provisioner';
       provide: SQSClient,
       useFactory: () => {
         const { sqs } = loadConfig();
-        // Credentials come from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY; the emulator accepts any value.
-        return new SQSClient({ endpoint: sqs.endpoint, region: sqs.region });
+        // Placeholder credentials so a clean clone starts without any setup: the emulator accepts any value, and
+        // without explicit credentials the AWS SDK keeps searching for real ones and startup hangs. They are never
+        // used against real AWS. A deployment against AWS would set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (or
+        // drop this block and rely on the SDK's default credential chain).
+        return new SQSClient({
+          endpoint: sqs.endpoint,
+          region: sqs.region,
+          credentials: {
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? 'test',
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? 'test',
+          },
+        });
       },
     },
     QueueProvisioner,

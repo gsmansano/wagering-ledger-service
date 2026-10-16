@@ -37,6 +37,7 @@ Section references (§) point to the original requirements document.
 | 28  | `ProcessWagerTransaction` order: unlocked wallet read (exists, owned by the player) → `insertIfAbsent` of the `PENDING` row → `SELECT … FOR UPDATE` on the wallet → apply → ledger entry → settle with `balance_after` → outbox events, all in one SQL transaction. Settled outcomes: `PROCESSED`, or `REJECTED` (`INSUFFICIENT_FUNDS`, `CURRENCY_MISMATCH`), both persisted, returned (not thrown) and replayed unchanged. `BET`/`WIN` emit `WagerTransactionProcessed` + `WalletBalanceChanged`; `LOSS` only `WagerTransactionProcessed`; a rejection only `WagerTransactionRejected`. | The first read is an unlocked fast path for a clean `WalletNotFoundError`; correctness does not depend on it (the foreign key is the real guard), and ownership and currency are checked on the locked row. Wallet deletion is not supported by the schema (foreign keys and the immutable ledger block it for any wallet with history); closing an account is designed as a soft `status` checked under the lock (to be written in `ARCHITECTURE.md`). Locking after the idempotency insert means duplicates of a settled transaction never contend for the wallet lock. | M4 |
 | 29  | Requests that persist nothing: unknown wallet (`WalletNotFoundError`), `OPENING` submitted from outside, a player who does not own the wallet and any invalid payload (`DomainError`), `REFUND`/`ROLLBACK` until M5 (`UnsupportedKindError`). The `WALLET_NOT_FOUND` failure code stays unused. | These are request errors the provider must fix, not business outcomes worth an audit row; the `wager_transactions.wallet_id` foreign key forbids a row without a wallet. | M4 |
 | 30  | The same `(providerId, externalTransactionId)` under a different idempotency key is a replay when the payload hash matches and an `IdempotencyConflictError` when it differs; the same key with a different payload is always a conflict. | The provider's transaction id is the business identity; one debit is guaranteed either way by both unique indexes, and a provider that regenerates keys on retry does not see errors. | M4 |
+| 31  | Minimal HTTP surface for M4: `POST /wallets` with `{ playerId, initialBalance: { currency, amount? } }` (spec shape, amount optional per #27) and `POST /wagering/transactions` with a required `Idempotency-Key` header. Provisional status mapping, finalized in M6: `400` structurally malformed (missing header, field absent or not a string, unknown `kind`), `404` unknown wallet, `409` duplicate wallet or idempotency conflict, `422` well-formed but invalid (amount, `OPENING`, wrong player, kind not supported yet). A business `REJECTED` is a `200` whose body carries `status` and `failureCode`; error bodies are `{ error, message }` with a stable code. One global `ApplicationErrorFilter` does the mapping. | Lets the PoC and the end-to-end tests run over real HTTP now, while the complete and consistent table (including rejection, pending and transient-failure statuses) is decided once in M6. | M4 |
 
 ---
 
@@ -68,14 +69,14 @@ Section references (§) point to the original requirements document.
 - [x] Integration tests proving each constraint and migration reversibility
 - [x] PoC: `bun run poc:schema` runs `psql` snippets that try to violate each constraint and shows the database refusing them
 
-## M4 — Core transaction processing — §7, §8 _(current)_
+## M4 — Core transaction processing — §7, §8
 
-- [ ] Concurrency strategy chosen and logged
-- [ ] `CreateWallet` (with OPENING entry) and `ProcessWagerTransaction` for BET/WIN/LOSS in a single SQL transaction: idempotency, payload conflict detection, wallet lock, ledger, outbox
-- [ ] Concurrency tests: 50 parallel duplicates, the 100.00 vs 2 × 80.00 race, parallel wallets
-- [ ] PoC: curl sequence: create a wallet, BET, duplicate BET, overdraft
+- [x] Concurrency strategy chosen and logged
+- [x] `CreateWallet` (with OPENING entry) and `ProcessWagerTransaction` for BET/WIN/LOSS in a single SQL transaction: idempotency, payload conflict detection, wallet lock, ledger, outbox
+- [x] Concurrency tests: 50 parallel duplicates, the 100.00 vs 2 × 80.00 race, parallel wallets
+- [x] PoC: `bun run poc:wagering` runs a curl sequence: create a wallet, BET, duplicate BET, overdraft, 30 parallel duplicates, ledger
 
-## M5 — Reversals and out-of-order references — §7, §7.1
+## M5 — Reversals and out-of-order references — §7, §7.1 _(current)_
 
 - [ ] REFUND / ROLLBACK rules, including the reversal-would-go-negative case
 - [ ] `PENDING_REFERENCE` handling with a backoff worker and a terminal rejection after the retry limit
