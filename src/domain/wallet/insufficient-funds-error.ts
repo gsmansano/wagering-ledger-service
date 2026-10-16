@@ -1,5 +1,5 @@
-import { DomainError } from './domain-error';
-import type { Money } from './money';
+import { DomainError } from '../shared/domain-error';
+import type { Money } from '../shared/money';
 
 /** A debit larger than the balance. A business outcome, not a bug: the use case rejects the transaction. */
 export class InsufficientFundsError extends DomainError {

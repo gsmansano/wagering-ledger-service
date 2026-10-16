@@ -1,4 +1,4 @@
-import { DomainError } from './domain-error';
+import { DomainError } from '../shared/domain-error';
 
 /** A state transition that the state machine forbids. A programming error, not a business outcome. */
 export class InvalidTransactionStateError extends DomainError {

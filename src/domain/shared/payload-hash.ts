@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { canonicalJson } from './canonical-json';
 import { Money, type MoneyProps } from './money';
-import type { WagerTransactionKind } from './wager-transaction';
+import type { WagerTransactionKind } from '../transaction/wager-transaction';
 
 /**
  * The business fields of a submitted transaction. The Idempotency-Key header and transport

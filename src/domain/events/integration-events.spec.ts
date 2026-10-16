@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { DomainError } from '../domain-error';
-import { FailureCode } from '../failure-code';
-import { Money } from '../money';
-import { Wallet } from '../wallet';
-import { LedgerDirection } from '../wallet-ledger-entry';
-import { WagerTransaction, WagerTransactionKind as Kind } from '../wager-transaction';
+import { DomainError } from '../shared/domain-error';
+import { FailureCode } from '../transaction/failure-code';
+import { Money } from '../shared/money';
+import { Wallet } from '../wallet/wallet';
+import { LedgerDirection } from '../wallet/wallet-ledger-entry';
+import { WagerTransaction, WagerTransactionKind as Kind } from '../transaction/wager-transaction';
 import { WagerTransactionPendingReference } from './wager-transaction-pending-reference';
 import { WagerTransactionProcessed } from './wager-transaction-processed';
 import { WagerTransactionRejected } from './wager-transaction-rejected';

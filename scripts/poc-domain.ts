@@ -1,17 +1,17 @@
 // Hands-on tour of the domain model. Run with: bun run poc:domain
 // Needs no database or Docker. Extended as each domain class lands.
-import { DomainError } from '../src/domain/domain-error';
-import { exponentialBackoffMs } from '../src/domain/backoff';
-import { canonicalJson } from '../src/domain/canonical-json';
+import { DomainError } from '../src/domain/shared/domain-error';
+import { exponentialBackoffMs } from '../src/domain/shared/backoff';
+import { canonicalJson } from '../src/domain/shared/canonical-json';
 import { WalletBalanceChanged } from '../src/domain/events/wallet-balance-changed';
-import { InboxMessage } from '../src/domain/inbox-message';
-import { Money } from '../src/domain/money';
-import { OutboxMessage } from '../src/domain/outbox-message';
-import { payloadHash } from '../src/domain/payload-hash';
-import { FailureCode } from '../src/domain/failure-code';
-import { Wallet } from '../src/domain/wallet';
-import { LedgerDirection, WalletLedgerEntry } from '../src/domain/wallet-ledger-entry';
-import { referenceReadiness, WagerTransaction, WagerTransactionKind } from '../src/domain/wager-transaction';
+import { InboxMessage } from '../src/domain/messaging/inbox-message';
+import { Money } from '../src/domain/shared/money';
+import { OutboxMessage } from '../src/domain/messaging/outbox-message';
+import { payloadHash } from '../src/domain/shared/payload-hash';
+import { FailureCode } from '../src/domain/transaction/failure-code';
+import { Wallet } from '../src/domain/wallet/wallet';
+import { LedgerDirection, WalletLedgerEntry } from '../src/domain/wallet/wallet-ledger-entry';
+import { referenceReadiness, WagerTransaction, WagerTransactionKind } from '../src/domain/transaction/wager-transaction';
 
 function section(title: string): void {
   console.log(`\n== ${title}`);

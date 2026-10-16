@@ -1,7 +1,7 @@
-import { DomainError } from '../domain-error';
-import type { MoneyProps } from '../money';
-import type { Wallet } from '../wallet';
-import type { LedgerDirection, WalletLedgerEntry } from '../wallet-ledger-entry';
+import { DomainError } from '../shared/domain-error';
+import type { MoneyProps } from '../shared/money';
+import type { Wallet } from '../wallet/wallet';
+import type { LedgerDirection, WalletLedgerEntry } from '../wallet/wallet-ledger-entry';
 import { IntegrationEvent, type EventContext } from './integration-event';
 
 export interface WalletBalanceChangedData {

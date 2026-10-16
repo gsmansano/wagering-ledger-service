@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { DomainError } from './domain-error';
+import { DomainError } from '../shared/domain-error';
 import { FailureCode } from './failure-code';
 import { InvalidTransactionStateError } from './invalid-transaction-state-error';
-import { Money } from './money';
-import { LedgerDirection } from './wallet-ledger-entry';
+import { Money } from '../shared/money';
+import { LedgerDirection } from '../wallet/wallet-ledger-entry';
 import {
   ReferenceReadiness,
   referenceReadiness,

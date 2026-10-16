@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { DomainError } from './domain-error';
-import { Money } from './money';
+import { DomainError } from '../shared/domain-error';
+import { Money } from '../shared/money';
 import { LedgerDirection, WalletLedgerEntry } from './wallet-ledger-entry';
 
 const brl = (amount: string) => Money.from({ amount, currency: 'BRL' });

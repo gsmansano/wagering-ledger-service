@@ -1,5 +1,5 @@
-import { DomainError } from './domain-error';
-import { Money } from './money';
+import { DomainError } from '../shared/domain-error';
+import { Money } from '../shared/money';
 
 export enum LedgerDirection {
   Debit = 'DEBIT',

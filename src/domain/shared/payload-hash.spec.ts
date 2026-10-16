@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { DomainError } from './domain-error';
 import { payloadHash, type WagerPayload } from './payload-hash';
-import { WagerTransactionKind } from './wager-transaction';
+import { WagerTransactionKind } from '../transaction/wager-transaction';
 
 const payload: WagerPayload = {
   providerId: 'prov',

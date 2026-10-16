@@ -1,8 +1,8 @@
-import { DomainError } from './domain-error';
+import { DomainError } from '../shared/domain-error';
 import { FailureCode } from './failure-code';
 import { InvalidTransactionStateError } from './invalid-transaction-state-error';
-import type { Money } from './money';
-import { LedgerDirection } from './wallet-ledger-entry';
+import type { Money } from '../shared/money';
+import { LedgerDirection } from '../wallet/wallet-ledger-entry';
 
 export enum WagerTransactionKind {
   /** Internal: opening credit of a wallet. Never accepted from the API or the queue. */

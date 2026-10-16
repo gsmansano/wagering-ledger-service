@@ -1,6 +1,6 @@
-import { DomainError } from '../domain-error';
-import type { MoneyProps } from '../money';
-import type { WagerTransaction, WagerTransactionStatus } from '../wager-transaction';
+import { DomainError } from '../shared/domain-error';
+import type { MoneyProps } from '../shared/money';
+import type { WagerTransaction, WagerTransactionStatus } from '../transaction/wager-transaction';
 
 /** Fields shared by the three transaction events. Money is MoneyProps, never a Money instance. */
 export interface TransactionEventData {

@@ -1,5 +1,5 @@
-import type { FailureCode } from '../failure-code';
-import { WagerTransactionStatus, type WagerTransaction } from '../wager-transaction';
+import type { FailureCode } from '../transaction/failure-code';
+import { WagerTransactionStatus, type WagerTransaction } from '../transaction/wager-transaction';
 import { IntegrationEvent, type EventContext } from './integration-event';
 import { transactionEventData, type TransactionEventData } from './transaction-event-data';
 

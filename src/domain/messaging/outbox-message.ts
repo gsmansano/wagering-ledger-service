@@ -1,6 +1,6 @@
-import { exponentialBackoffMs } from './backoff';
-import { DomainError } from './domain-error';
-import type { IntegrationEvent } from './events/integration-event';
+import { exponentialBackoffMs } from '../shared/backoff';
+import { DomainError } from '../shared/domain-error';
+import type { IntegrationEvent } from '../events/integration-event';
 
 export interface OutboxRetryPolicy {
   baseMs: number;

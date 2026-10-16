@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { DomainError } from './domain-error';
-import { WalletBalanceChanged } from './events/wallet-balance-changed';
-import { Money } from './money';
+import { DomainError } from '../shared/domain-error';
+import { WalletBalanceChanged } from '../events/wallet-balance-changed';
+import { Money } from '../shared/money';
 import { DEFAULT_OUTBOX_RETRY_POLICY, OutboxMessage } from './outbox-message';
-import { Wallet } from './wallet';
+import { Wallet } from '../wallet/wallet';
 
 const brl = (amount: string) => Money.from({ amount, currency: 'BRL' });
 const t0 = new Date('2026-01-01T00:00:00Z');

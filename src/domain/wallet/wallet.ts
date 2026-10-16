@@ -1,6 +1,6 @@
-import { DomainError } from './domain-error';
+import { DomainError } from '../shared/domain-error';
 import { InsufficientFundsError } from './insufficient-funds-error';
-import type { Money } from './money';
+import type { Money } from '../shared/money';
 import { LedgerDirection, WalletLedgerEntry } from './wallet-ledger-entry';
 
 export interface WalletState {

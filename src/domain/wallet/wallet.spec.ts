@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
-import { DomainError } from './domain-error';
+import { DomainError } from '../shared/domain-error';
 import { InsufficientFundsError } from './insufficient-funds-error';
-import { Money } from './money';
+import { Money } from '../shared/money';
 import { Wallet } from './wallet';
 import { LedgerDirection } from './wallet-ledger-entry';
 

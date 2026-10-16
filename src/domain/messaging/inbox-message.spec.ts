@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { DomainError } from './domain-error';
+import { DomainError } from '../shared/domain-error';
 import { InboxMessage } from './inbox-message';
 
 const t0 = new Date('2026-01-01T00:00:00Z');

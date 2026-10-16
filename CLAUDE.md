@@ -32,6 +32,7 @@ At the start of a session, read `PLAN.md` and the most recent file in `docs/devl
 These are hard requirements of the specification.
 
 - Money is never `number` or a float: a decimal library in code, `NUMERIC(…, 2)` in the database, decimal strings (`"25.00"`) in contracts.
+- The domain layer (`src/domain`) is grouped by concept: `shared/` (money, errors, hashing, backoff), `wallet/`, `transaction/`, `messaging/` (inbox, outbox) and `events/`. Unit tests (`*.spec.ts`) sit next to the code they test; integration tests live in `test/integration/`. New domain files go in the matching folder.
 - The domain layer (`src/domain`) imports nothing from NestJS or the ORM. Entities use private constructors and static factories (`create`, `open`, `from`, `rehydrate`); `rehydrate` does not re-validate.
 - Invariants (uniqueness, non-negative balance, ledger immutability) are enforced by database constraints, not only in application code.
 - The balance change, ledger entry, transaction status, inbox record and outbox event are written in a single SQL transaction. Events are never published before commit.

@@ -1,4 +1,4 @@
-import { WagerTransactionStatus, type WagerTransaction } from '../wager-transaction';
+import { WagerTransactionStatus, type WagerTransaction } from '../transaction/wager-transaction';
 import { IntegrationEvent, type EventContext } from './integration-event';
 import { transactionEventData, type TransactionEventData } from './transaction-event-data';
 
