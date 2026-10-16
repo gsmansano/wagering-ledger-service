@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { Logger, Module } from '@nestjs/common';
+import { GetQueueUrlCommand, SQSClient } from '@aws-sdk/client-sqs';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { EntityManager, PostgreSqlDriver } from '@mikro-orm/postgresql';
 import { UNIT_OF_WORK, type UnitOfWork } from './application/ports/unit-of-work';
@@ -10,12 +11,16 @@ import { GetWallet } from './application/query/get-wallet';
 import { ProcessWagerTransaction } from './application/transaction/process-wager-transaction';
 import { ResolvePendingReference } from './application/transaction/resolve-pending-reference';
 import { CreateWallet } from './application/wallet/create-wallet';
+import { ReconcileWallet } from './application/wallet/reconcile-wallet';
 import { loadConfig } from './config';
 import { createOrmConfig } from './infrastructure/database/mikro-orm.config';
 import { newId } from './infrastructure/id-generator';
 import { MikroOrmUnitOfWork } from './infrastructure/database/repositories/mikro-orm-unit-of-work';
+import { ReadinessService } from './infrastructure/readiness.service';
 import { PendingReferenceWorker } from './infrastructure/workers/pending-reference.worker';
+import { WAGER_QUEUE } from './infrastructure/messaging/queue-names';
 import { SqsModule } from './infrastructure/messaging/sqs.module';
+import { AuthGuard } from './interfaces/http/auth/auth.guard';
 import { ApplicationErrorFilter } from './interfaces/http/application-error.filter';
 import { HealthController } from './interfaces/http/health.controller';
 import { ProvidersController } from './interfaces/http/providers.controller';
@@ -37,6 +42,24 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
   controllers: [HealthController, WalletsController, WageringController, ProvidersController],
   providers: [
     { provide: APP_FILTER, useClass: ApplicationErrorFilter },
+    { provide: APP_GUARD, useClass: AuthGuard },
+    {
+      provide: ReadinessService,
+      useFactory: (em: EntityManager, sqs: SQSClient) =>
+        new ReadinessService(
+          {
+            pingPostgres: () => em.getConnection().execute('select 1'),
+            pingSqs: (signal) => sqs.send(new GetQueueUrlCommand({ QueueName: WAGER_QUEUE }), { abortSignal: signal }),
+          },
+          2_000,
+          (dependency, error) =>
+            new Logger(ReadinessService.name).warn(
+              `${dependency} not ready: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+        ),
+      inject: [EntityManager, SQSClient],
+    },
+    { provide: ReconcileWallet, useFactory: (unitOfWork: UnitOfWork) => new ReconcileWallet(unitOfWork), inject: [UNIT_OF_WORK] },
     { provide: UNIT_OF_WORK, useFactory: (em: EntityManager) => new MikroOrmUnitOfWork(em), inject: [EntityManager] },
     {
       provide: CreateWallet,

@@ -36,7 +36,7 @@ Configuration is read from environment variables; see `.env.example`. The SQS em
 
 ## HTTP API (so far)
 
-Endpoints so far; reconciliation and readiness arrive in the next M6 step. Errors are `{ error, message }` with a stable code.
+Authentication is a global no-op `AuthGuard` (the extension point, with the intended identity-provider design documented in its comment); health endpoints are marked `@Public()`. Errors are `{ error, message }` with a stable code.
 
 | Endpoint | Success |
 |---|---|
@@ -44,6 +44,8 @@ Endpoints so far; reconciliation and readiness arrive in the next M6 step. Error
 | `POST /wagering/transactions` with an `Idempotency-Key` header (unique per provider) and an optional `X-Correlation-Id` | the transaction view plus `idempotentReplay` (see below) |
 | `GET /wallets/:walletId` | `200` `{ id, playerId, balance, version }` |
 | `GET /wallets/:walletId/ledger?cursor=&limit=` | `200` `{ entries, nextCursor }`: entries in the order they were applied (`sequence`, `direction`, `money`, `balanceBefore`, `balanceAfter`, `transactionId`, `createdAt`); `limit` 1 to 200 (default 50); pass `nextCursor` back as `cursor`, `null` on the last page |
+| `POST /wallets/:walletId/reconciliation` | `200` `{ walletId, storedBalance, calculatedBalance, difference, consistent, checkedEntries }`: the stored balance against the signed sum of the ledger, read in one SQL statement. A divergence is flagged (`consistent: false`) and logged, never corrected |
+| `GET /health/live`, `GET /health/ready` | `200` `{ status: "ok" }` (process up) and `{ status: "ready", checks }`; readiness answers `503 { status: "unavailable", checks }` naming the dependency (`postgres`, `sqs`) that did not answer within 2 s. Both are public |
 | `GET /wagering/transactions/:transactionId` and `GET /providers/:providerId/wagering/transactions/:externalTransactionId` | `200` the transaction view, whatever its status (a rejected or pending transaction is returned as it is; only a submit answers `422`/`202`) |
 
 The transaction view is `{ transactionId, providerId, externalTransactionId, walletId, kind, money, status, failureCode?, referenceExternalTransactionId?, balance?, createdAt, processedAt? }`; `balance` is the balance observed at settlement and is absent while the transaction is pending.

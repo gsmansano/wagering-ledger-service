@@ -108,7 +108,7 @@ Section references (§) point to the original requirements document.
 
 - [x] Step 1: status table applied by one filter (decisions #43, #44), shared `TransactionView` and `X-Correlation-Id` (#45); tests per status class
 - [x] Step 2: `GET` wallet, transaction by id, transaction by provider and external id, and the cursor-paginated ledger (#46)
-- [ ] Step 3: reconciliation (#47), readiness (#48), no-op `AuthGuard` with the intended design documented (#49)
+- [x] Step 3: reconciliation (#47), readiness (#48), no-op `AuthGuard` with the intended design documented (#49)
 - [ ] Step 4: end-to-end tests per endpoint and per status class
 - [ ] PoC: Postman collection in `docs/` covering every endpoint
 
