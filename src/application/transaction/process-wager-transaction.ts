@@ -1,5 +1,6 @@
 import { WagerTransactionPendingReference } from '../../domain/events/wager-transaction-pending-reference';
 import type { IntegrationEvent } from '../../domain/events/integration-event';
+import { InboxMessage } from '../../domain/messaging/inbox-message';
 import { OutboxMessage } from '../../domain/messaging/outbox-message';
 import { InvalidInputError } from '../../domain/shared/invalid-input-error';
 import { Money, type MoneyProps } from '../../domain/shared/money';
@@ -10,6 +11,7 @@ import type { Repositories, UnitOfWork } from '../ports/unit-of-work';
 import { WalletNotFoundError } from '../wallet/wallet-not-found.error';
 import { ApplyOutcome, applyUnderLock } from './apply-transaction';
 import { IdempotencyConflictError } from './idempotency-conflict.error';
+import { InboxPayloadConflictError } from './inbox-payload-conflict.error';
 import {
   DEFAULT_REFERENCE_RETRY_POLICY,
   referenceRetryAt,
@@ -39,6 +41,17 @@ export interface ProcessWagerTransactionResult {
   idempotentReplay: boolean;
 }
 
+/** Identifies the queue message a command came from, so the inbox row is written in the same SQL transaction. */
+export interface InboxContext {
+  consumerName: string;
+  messageId: string;
+}
+
+/** The consumer already processed this message: nothing was written and the message can be acknowledged. */
+export interface DuplicateMessage {
+  duplicateMessage: true;
+}
+
 export interface ProcessWagerTransactionDeps {
   unitOfWork: UnitOfWork;
   now: () => Date;
@@ -59,8 +72,19 @@ export class ProcessWagerTransaction {
    * undefined, and retried later by `ResolvePendingReference`.
    * Throws, persisting nothing: InvalidInputError for an invalid payload (including OPENING and a wrong player),
    * WalletNotFoundError and IdempotencyConflictError.
+   * With `inbox` (a queue message), the first statement records the message as processed in the same transaction
+   * (decision #51): an already recorded message id returns `DuplicateMessage` and writes nothing, and the same id
+   * with a different payload throws InboxPayloadConflictError.
    */
-  async execute(command: ProcessWagerTransactionCommand): Promise<ProcessWagerTransactionResult> {
+  execute(command: ProcessWagerTransactionCommand): Promise<ProcessWagerTransactionResult>;
+  execute(
+    command: ProcessWagerTransactionCommand,
+    inbox: InboxContext,
+  ): Promise<ProcessWagerTransactionResult | DuplicateMessage>;
+  async execute(
+    command: ProcessWagerTransactionCommand,
+    inbox?: InboxContext,
+  ): Promise<ProcessWagerTransactionResult | DuplicateMessage> {
     const { unitOfWork, now, newId } = this.deps;
     const retryPolicy = this.deps.referenceRetry ?? DEFAULT_REFERENCE_RETRY_POLICY;
     this.assertSupportedKind(command.kind);
@@ -85,6 +109,20 @@ export class ProcessWagerTransaction {
     const correlationId = command.correlationId ?? newId();
 
     return unitOfWork.run(async (repos) => {
+      if (inbox !== undefined) {
+        const at = now();
+        // Written already processed: the row exists only if the business change below commits with it.
+        const received = InboxMessage.receive({ ...inbox, payloadHash: hash, receivedAt: at });
+        received.markProcessed(at);
+        if (!(await repos.inbox.insertIfAbsent(received))) {
+          const earlier = await repos.inbox.find(inbox.consumerName, inbox.messageId);
+          if (earlier !== undefined && earlier.payloadHash !== hash) {
+            throw new InboxPayloadConflictError(inbox.consumerName, inbox.messageId);
+          }
+          return { duplicateMessage: true };
+        }
+      }
+
       // Fast path for a clean WalletNotFoundError only; correctness does not depend on it. The foreign key on
       // wager_transactions.wallet_id is the real guard: without this read a missing wallet would surface as a
       // constraint violation on the insert below. A wallet that vanished in between would do the same, a rare

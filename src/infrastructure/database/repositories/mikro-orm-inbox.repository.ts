@@ -11,6 +11,16 @@ export class MikroOrmInboxRepository implements InboxRepository {
     await this.em.insert(InboxMessageSchema, inboxToRow(message));
   }
 
+  async insertIfAbsent(message: InboxMessage): Promise<boolean> {
+    const result = await this.em
+      .createQueryBuilder(InboxMessageSchema)
+      .insert(inboxToRow(message))
+      .onConflict()
+      .ignore()
+      .execute('run');
+    return result.affectedRows === 1;
+  }
+
   async find(consumerName: string, messageId: string): Promise<InboxMessage | undefined> {
     const row = await this.em.findOne(InboxMessageSchema, { consumerName, messageId }, { refresh: true });
     return row ? rowToInbox(row) : undefined;
