@@ -7,6 +7,7 @@ import { ProcessWagerTransaction } from './application/transaction/process-wager
 import { CreateWallet } from './application/wallet/create-wallet';
 import { loadConfig } from './config';
 import { createOrmConfig } from './infrastructure/database/mikro-orm.config';
+import { newId } from './infrastructure/id-generator';
 import { MikroOrmUnitOfWork } from './infrastructure/database/repositories/mikro-orm-unit-of-work';
 import { SqsModule } from './infrastructure/messaging/sqs.module';
 import { ApplicationErrorFilter } from './interfaces/http/application-error.filter';
@@ -31,13 +32,13 @@ import { WalletsController } from './interfaces/http/wallets.controller';
     {
       provide: CreateWallet,
       useFactory: (unitOfWork: UnitOfWork) =>
-        new CreateWallet({ unitOfWork, now: () => new Date(), newId: () => crypto.randomUUID() }),
+        new CreateWallet({ unitOfWork, now: () => new Date(), newId }),
       inject: [UNIT_OF_WORK],
     },
     {
       provide: ProcessWagerTransaction,
       useFactory: (unitOfWork: UnitOfWork) =>
-        new ProcessWagerTransaction({ unitOfWork, now: () => new Date(), newId: () => crypto.randomUUID() }),
+        new ProcessWagerTransaction({ unitOfWork, now: () => new Date(), newId }),
       inject: [UNIT_OF_WORK],
     },
   ],

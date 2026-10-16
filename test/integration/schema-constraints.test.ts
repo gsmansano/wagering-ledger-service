@@ -118,11 +118,12 @@ describe('schema constraints (real PostgreSQL)', () => {
       walletId = (await wallet()).id;
     });
 
-    it('rejects a repeated idempotency key', async () => {
+    it('rejects a repeated idempotency key of the same provider, and accepts it for another provider', async () => {
       await tx(walletId, { idempotency_key: 'k1' });
       await expect(tx(walletId, { idempotency_key: 'k1' })).rejects.toThrow(
-        /wager_transactions_idempotency_key_key/,
+        /wager_transactions_provider_idempotency_key_key/,
       );
+      await tx(walletId, { provider_id: 'provider-2', idempotency_key: 'k1' });
     });
 
     it('rejects a repeated (provider, external transaction id) under a different key', async () => {

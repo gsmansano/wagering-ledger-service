@@ -34,11 +34,22 @@ describe('migrations (real PostgreSQL)', () => {
     expect(await tableExists('skeleton_probe')).toBe(false);
   });
 
-  it('reverts only the core schema one step at a time', async () => {
+  it('reverts only the latest migration one step at a time (idempotency key scope)', async () => {
+    const constraintExists = async (name: string): Promise<boolean> => {
+      const rows = await orm.em
+        .getConnection()
+        .execute<{ exists: boolean }[]>(`select exists (select 1 from pg_constraint where conname = ?) as exists`, [name]);
+      return rows[0]!.exists;
+    };
+    expect(await constraintExists('wager_transactions_provider_idempotency_key_key')).toBe(true);
+
     await orm.migrator.down();
-    for (const table of tables) expect(await tableExists(table)).toBe(false);
-    expect(await tableExists('skeleton_probe')).toBe(true);
-    await orm.migrator.up();
     for (const table of tables) expect(await tableExists(table)).toBe(true);
+    expect(await constraintExists('wager_transactions_provider_idempotency_key_key')).toBe(false);
+    expect(await constraintExists('wager_transactions_idempotency_key_key')).toBe(true);
+
+    await orm.migrator.up();
+    expect(await constraintExists('wager_transactions_provider_idempotency_key_key')).toBe(true);
+    expect(await constraintExists('wager_transactions_idempotency_key_key')).toBe(false);
   });
 });

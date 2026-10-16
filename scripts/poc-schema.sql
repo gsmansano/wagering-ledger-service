@@ -26,14 +26,14 @@ end $$;
 create function pg_temp.add_tx(
   p_id uuid, p_key text, p_ext text, p_kind text default 'BET', p_amount numeric default 10,
   p_status text default 'PROCESSED', p_failure text default null, p_ref_ext text default null,
-  p_ref_id uuid default null) returns void
+  p_ref_id uuid default null, p_provider text default 'poc-provider') returns void
 language sql as $$
   insert into wager_transactions
     (id, provider_id, external_transaction_id, idempotency_key, payload_hash, wallet_id, player_id,
      round_id, game_id, kind, amount, currency, reference_external_transaction_id, status,
      reference_transaction_id, failure_code, created_at, processed_at)
   values
-    (p_id, 'poc-provider', p_ext, p_key, repeat('a', 64), '00000000-0000-0000-0000-0000000000a1',
+    (p_id, p_provider, p_ext, p_key, repeat('a', 64), '00000000-0000-0000-0000-0000000000a1',
      'poc-player', 'round-1', 'game-1', p_kind, p_amount, 'BRL', p_ref_ext, p_status, p_ref_id,
      p_failure, now(), case when p_status in ('PROCESSED', 'REJECTED', 'FAILED') then now() end)
 $$;
@@ -56,10 +56,12 @@ select pg_temp.attempt('wallet: same player, other currency (control)', 'accepte
   $$insert into wallets values (gen_random_uuid(), 'poc-player', 'USD', 0, 1, now(), now())$$);
 
 -- ---- idempotency ------------------------------------------------------------
-select pg_temp.attempt('transaction: repeated idempotency key', 'refused',
+select pg_temp.attempt('transaction: repeated idempotency key (same provider)', 'refused',
   $$select pg_temp.add_tx(gen_random_uuid(), 'key-1', 'ext-other')$$);
 select pg_temp.attempt('transaction: repeated (provider, external id)', 'refused',
   $$select pg_temp.add_tx(gen_random_uuid(), 'key-other', 'ext-1')$$);
+select pg_temp.attempt('transaction: same idempotency key, other provider (control)', 'accepted',
+  $$select pg_temp.add_tx(gen_random_uuid(), 'key-1', 'ext-3', p_provider => 'other-provider')$$);
 select pg_temp.attempt('transaction: new key and external id (control)', 'accepted',
   $$select pg_temp.add_tx(gen_random_uuid(), 'key-2', 'ext-2')$$);
 

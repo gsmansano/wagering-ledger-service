@@ -164,7 +164,7 @@ describe('concurrency primitives (real PostgreSQL)', () => {
         const first = await r.transactions.insertIfAbsent(newBet(wallet.id, 'key-1', 'ext-1'));
         const sameKey = await r.transactions.insertIfAbsent(newBet(wallet.id, 'key-1', 'ext-2'));
         const sameExternalId = await r.transactions.insertIfAbsent(newBet(wallet.id, 'key-3', 'ext-1'));
-        const found = await r.transactions.findByIdempotencyKey('key-1');
+        const found = await r.transactions.findByIdempotencyKey('provider-1', 'key-1');
         return { first, sameKey, sameExternalId, found: found?.transaction.externalTransactionId };
       });
       expect(result).toEqual({ first: true, sameKey: false, sameExternalId: false, found: 'ext-1' });
@@ -178,7 +178,7 @@ describe('concurrency primitives (real PostgreSQL)', () => {
         Array.from({ length: 20 }, () =>
           uow.run(async (r) => {
             const inserted = await r.transactions.insertIfAbsent(newBet(wallet.id, 'same-key', 'same-ext'));
-            const stored = await r.transactions.findByIdempotencyKey('same-key');
+            const stored = await r.transactions.findByIdempotencyKey('provider-1', 'same-key');
             return { inserted, storedId: stored?.transaction.id };
           }),
         ),

@@ -6,6 +6,7 @@ import {
   ProcessWagerTransaction,
   type ProcessWagerTransactionCommand,
 } from '../../src/application/transaction/process-wager-transaction';
+import { UnresolvedConflictError } from '../../src/application/transaction/unresolved-conflict.error';
 import { UnsupportedKindError } from '../../src/application/transaction/unsupported-kind.error';
 import { CreateWallet } from '../../src/application/wallet/create-wallet';
 import { WalletNotFoundError } from '../../src/application/wallet/wallet-not-found.error';
@@ -221,6 +222,37 @@ describe('ProcessWagerTransaction (real PostgreSQL)', () => {
         process.execute({ ...original, idempotencyKey: 'another-key', money: { amount: '99.00', currency: 'BRL' } }),
       ).rejects.toBeInstanceOf(IdempotencyConflictError);
       expect(await balanceOf()).toBe('70.00');
+    });
+
+    it('keeps idempotency keys independent between providers: the same key string is not a conflict', async () => {
+      const first = bet('30.00', { idempotencyKey: 'shared-key', providerId: 'provider-1' });
+      const second = bet('20.00', { idempotencyKey: 'shared-key', providerId: 'provider-2' });
+
+      const results = [await process.execute(first), await process.execute(second)];
+
+      expect(results.map((r) => r.idempotentReplay)).toEqual([false, false]);
+      expect(results[0]!.transaction.id).not.toBe(results[1]!.transaction.id);
+      expect(await balanceOf()).toBe('50.00');
+      await assertLedgerMatchesBalance(orm, walletId);
+
+      // Each provider still gets its own replay.
+      expect((await process.execute(second)).transaction.id).toBe(results[1]!.transaction.id);
+    });
+
+    it('fails loudly, and persists nothing, when an insert conflicts for a reason no lookup explains', async () => {
+      const first = await process.execute(bet('30.00'));
+      // Reuses the internal id of an existing transaction: a unique violation that is neither the key nor the provider id.
+      let calls = 0;
+      const clashing = new ProcessWagerTransaction({
+        ...deps(uow),
+        newId: () => (calls++ === 0 ? first.transaction.id : crypto.randomUUID()),
+      });
+
+      await expect(clashing.execute(bet('10.00'))).rejects.toBeInstanceOf(UnresolvedConflictError);
+
+      expect(await balanceOf()).toBe('70.00');
+      expect(await count('wager_transactions')).toBe(2); // opening + the first bet
+      await assertLedgerMatchesBalance(orm, walletId);
     });
 
     it('hashes "25.5" and "25.50" alike, so the amount spelling does not cause a conflict', async () => {

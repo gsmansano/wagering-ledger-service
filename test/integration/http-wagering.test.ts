@@ -4,6 +4,8 @@ import { Test } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
 
 // The two minimal endpoints of M4 over real HTTP. The full API and its status table arrive in M6.
+const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
 describe('wagering over HTTP (real PostgreSQL + SQS emulator)', () => {
   let app: INestApplication;
   let baseUrl: string;
@@ -54,6 +56,7 @@ describe('wagering over HTTP (real PostgreSQL + SQS emulator)', () => {
       const { res, playerId } = await newWallet('1000.00');
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ playerId, balance: { amount: '1000.00', currency: 'BRL' }, version: 1 });
+      expect(res.body.id).toMatch(UUID_V7); // ids are time-ordered UUID v7, as in the specification's examples
     });
 
     it('creates an empty wallet when the amount is omitted or zero', async () => {
@@ -86,6 +89,7 @@ describe('wagering over HTTP (real PostgreSQL + SQS emulator)', () => {
       const first = await post('/wagering/transactions', body, headers);
       expect(first.status).toBe(200);
       expect(first.body).toMatchObject({ status: 'PROCESSED', balance: { amount: '975.00', currency: 'BRL' }, idempotentReplay: false });
+      expect(first.body.transactionId).toMatch(UUID_V7);
 
       await post('/wagering/transactions', transaction(walletId, playerId, { money: { amount: '5.00', currency: 'BRL' } }), {
         'Idempotency-Key': 'other-bet-' + crypto.randomUUID(),

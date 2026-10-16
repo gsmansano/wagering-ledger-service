@@ -11,12 +11,15 @@ export interface WagerTransactionRepository {
   /** Fails on a duplicate id, idempotency key or (provider, external transaction id). */
   insert(transaction: WagerTransaction): Promise<void>;
   /**
-   * Inserts unless the id, idempotency key or (provider, external transaction id) already exists; false means
-   * another delivery owns it. Unlike `insert`, a conflict does not abort the surrounding SQL transaction.
+   * Inserts unless a unique rule is hit: the id, (provider, idempotency key) or (provider, external transaction
+   * id). False means a conflict; the caller looks up who owns the key. PostgreSQL accepts a single conflict target
+   * per statement, so none is named and the caller must handle a conflict that no lookup explains.
+   * Unlike `insert`, a conflict does not abort the surrounding SQL transaction.
    */
   insertIfAbsent(transaction: WagerTransaction): Promise<boolean>;
   findById(id: string): Promise<PersistedWagerTransaction | undefined>;
-  findByIdempotencyKey(idempotencyKey: string): Promise<PersistedWagerTransaction | undefined>;
+  /** The key is unique per provider, so it is looked up together with the provider id. */
+  findByIdempotencyKey(providerId: string, idempotencyKey: string): Promise<PersistedWagerTransaction | undefined>;
   findByProviderAndExternalId(
     providerId: string,
     externalTransactionId: string,

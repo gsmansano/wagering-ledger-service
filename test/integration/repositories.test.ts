@@ -138,13 +138,13 @@ describe('repositories (real PostgreSQL)', () => {
       const bet = newBet(wallet.id);
       await uow.run((r) => r.transactions.insert(bet));
 
-      const byKey = await uow.run((r) => r.transactions.findByIdempotencyKey(bet.idempotencyKey));
+      const byKey = await uow.run((r) => r.transactions.findByIdempotencyKey(bet.providerId, bet.idempotencyKey));
       const byExternal = await uow.run((r) =>
         r.transactions.findByProviderAndExternalId('provider-1', bet.externalTransactionId),
       );
       expect(byKey?.transaction.id).toBe(bet.id);
       expect(byExternal?.transaction.id).toBe(bet.id);
-      expect(await uow.run((r) => r.transactions.findByIdempotencyKey('nope'))).toBeUndefined();
+      expect(await uow.run((r) => r.transactions.findByIdempotencyKey('provider-1', 'nope'))).toBeUndefined();
     });
 
     it('persists a processed outcome with the observed balance', async () => {
@@ -175,7 +175,7 @@ describe('repositories (real PostgreSQL)', () => {
       await uow.run((r) => r.transactions.insert(newBet(wallet.id, '10.00', { idempotencyKey: 'same' })));
       await expect(
         uow.run((r) => r.transactions.insert(newBet(wallet.id, '10.00', { idempotencyKey: 'same' }))),
-      ).rejects.toThrow(/wager_transactions_idempotency_key_key/);
+      ).rejects.toThrow(/wager_transactions_provider_idempotency_key_key/);
     });
   });
 
@@ -294,7 +294,7 @@ describe('repositories (real PostgreSQL)', () => {
           await r.transactions.insert(first);
           await r.transactions.insert(second);
         }),
-      ).rejects.toThrow(/wager_transactions_idempotency_key_key/);
+      ).rejects.toThrow(/wager_transactions_provider_idempotency_key_key/);
 
       expect(await uow.run((r) => r.transactions.findById(first.id))).toBeUndefined();
     });

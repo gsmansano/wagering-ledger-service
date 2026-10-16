@@ -29,8 +29,8 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
     return this.findOne({ id });
   }
 
-  findByIdempotencyKey(idempotencyKey: string): Promise<PersistedWagerTransaction | undefined> {
-    return this.findOne({ idempotencyKey });
+  findByIdempotencyKey(providerId: string, idempotencyKey: string): Promise<PersistedWagerTransaction | undefined> {
+    return this.findOne({ providerId, idempotencyKey });
   }
 
   findByProviderAndExternalId(

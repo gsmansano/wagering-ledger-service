@@ -40,7 +40,7 @@ Minimal endpoints of M4; the full API and its status table arrive in M6.
 | Endpoint | Success | Errors |
 |---|---|---|
 | `POST /wallets` `{ playerId, initialBalance: { currency, amount? } }` | `201` wallet with balance and `version`; an omitted or `"0.00"` amount opens an empty wallet | `400` malformed body, `409 WALLET_ALREADY_EXISTS`, `422 INVALID_PAYLOAD` |
-| `POST /wagering/transactions` with an `Idempotency-Key` header | `200` `{ transactionId, status, failureCode?, balance, idempotentReplay }` for `PROCESSED` and for a business `REJECTED` (see `failureCode`) | `400` missing header or malformed body, `404 WALLET_NOT_FOUND`, `409 IDEMPOTENCY_CONFLICT`, `422` (`INVALID_PAYLOAD`, `UNSUPPORTED_KIND` for REFUND/ROLLBACK until M5) |
+| `POST /wagering/transactions` with an `Idempotency-Key` header (unique per provider) | `200` `{ transactionId, status, failureCode?, balance, idempotentReplay }` for `PROCESSED` and for a business `REJECTED` (see `failureCode`) | `400` missing header or malformed body, `404 WALLET_NOT_FOUND`, `409 IDEMPOTENCY_CONFLICT`, `422` (`INVALID_PAYLOAD`, `UNSUPPORTED_KIND` for REFUND/ROLLBACK until M5) |
 
 ```bash
 docker compose up -d postgres ministack migrate && bun run start   # in one terminal

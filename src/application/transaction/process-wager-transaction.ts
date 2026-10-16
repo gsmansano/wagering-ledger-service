@@ -14,6 +14,7 @@ import type { PersistedWagerTransaction } from '../ports/wager-transaction.repos
 import type { Repositories, UnitOfWork } from '../ports/unit-of-work';
 import { WalletNotFoundError } from '../wallet/wallet-not-found.error';
 import { IdempotencyConflictError } from './idempotency-conflict.error';
+import { UnresolvedConflictError } from './unresolved-conflict.error';
 import { UnsupportedKindError } from './unsupported-kind.error';
 
 export interface ProcessWagerTransactionCommand {
@@ -157,10 +158,10 @@ export class ProcessWagerTransaction {
     hash: string,
   ): Promise<ProcessWagerTransactionResult> {
     const existing: PersistedWagerTransaction | undefined =
-      (await repos.transactions.findByIdempotencyKey(command.idempotencyKey)) ??
+      (await repos.transactions.findByIdempotencyKey(command.providerId, command.idempotencyKey)) ??
       (await repos.transactions.findByProviderAndExternalId(command.providerId, command.externalTransactionId));
     if (existing === undefined) {
-      throw new Error(`Insert conflicted but no stored transaction was found for key ${command.idempotencyKey}`);
+      throw new UnresolvedConflictError(command.providerId, command.idempotencyKey);
     }
     if (!existing.transaction.matchesPayload(hash)) {
       throw new IdempotencyConflictError(command.idempotencyKey, existing.transaction.id);
