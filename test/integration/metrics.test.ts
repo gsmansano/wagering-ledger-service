@@ -3,6 +3,7 @@ import type { INestApplication } from '@nestjs/common';
 import type { MikroORM } from '@mikro-orm/postgresql';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
+import { ReadinessService } from '../../src/infrastructure/readiness.service';
 import { initTestOrm, truncateAll } from '../support/database';
 
 // GET /metrics after real traffic through the application: PostgreSQL and the SQS emulator are real.
@@ -90,12 +91,15 @@ describe('metrics endpoint (real PostgreSQL + SQS emulator)', () => {
     expect(sample(after, 'wagering_dependency_up{dependency="sqs"}')).toBe(1);
   }, 30_000);
 
-  it('counts a parked event and reports its wallet as held', async () => {
+  it('reports parked events as a gauge', async () => {
     await orm.em.getConnection().execute(`update outbox_messages set failed_at = now() where id = (select id from outbox_messages order by sequence limit 1)`);
 
     const text = await scrape();
 
     expect(sample(text, 'wagering_outbox_parked_events')).toBe(1);
+    // The events behind the parked one are held, not parked: they still count as pending and in the lag (review F-4).
+    expect(sample(text, 'wagering_outbox_pending_events')).toBeGreaterThan(0);
+    expect(sample(text, 'wagering_outbox_lag_seconds')).toBeGreaterThan(0);
   });
 
   it('carries no wallet, player or provider identifiers in any label', async () => {
@@ -105,3 +109,24 @@ describe('metrics endpoint (real PostgreSQL + SQS emulator)', () => {
     expect(text).not.toContain('metrics-');
   });
 });
+
+describe('metrics endpoint with a dependency down', () => {
+  it('reports the dependency as 0 and still answers', async () => {
+    const down = { check: async () => ({ ready: false, checks: { postgres: 'up', sqs: 'down' } }) };
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(ReadinessService)
+      .useValue(down)
+      .compile();
+    const app = moduleRef.createNestApplication();
+    await app.listen(0);
+    try {
+      const text = await (await fetch(`${await app.getUrl()}/metrics`)).text();
+
+      expect(text).toContain('wagering_dependency_up{dependency="sqs"} 0');
+      expect(text).toContain('wagering_dependency_up{dependency="postgres"} 1');
+    } finally {
+      await app.close();
+    }
+  });
+});
+

@@ -11,6 +11,7 @@ import { CreateWallet } from '../../src/application/wallet/create-wallet';
 import { WalletNotFoundError } from '../../src/application/wallet/wallet-not-found.error';
 import { WagerTransactionKind, WagerTransactionStatus } from '../../src/domain/transaction/wager-transaction';
 import { MikroOrmUnitOfWork } from '../../src/infrastructure/database/repositories/mikro-orm-unit-of-work';
+import { CountingMetrics } from '../support/counting-metrics';
 import { initTestOrm, truncateAll } from '../support/database';
 import { assertLedgerMatchesBalance } from '../support/ledger';
 
@@ -67,6 +68,18 @@ describe('ProcessWagerTransaction from a queue message: inbox (real PostgreSQL)'
     expect(rows[0]).toMatchObject({ consumer_name: CONSUMER, message_id: 'msg-1' });
     expect(rows[0]!.processed_at).not.toBeNull();
     await assertLedgerMatchesBalance(orm, walletId);
+  });
+
+  it('reports a redelivered message as an inbox duplicate and counts the status only once', async () => {
+    const metrics = new CountingMetrics();
+    const counted = new ProcessWagerTransaction({ ...deps(), metrics });
+
+    await counted.execute(bet(), { consumerName: CONSUMER, messageId: 'msg-1' });
+    await counted.execute(bet(), { consumerName: CONSUMER, messageId: 'msg-1' });
+
+    expect(metrics.statuses).toEqual(['BET:PROCESSED']);
+    expect(metrics.duplicates).toEqual(['inbox']);
+    expect(metrics.processing).toEqual(['settled', 'duplicate_message']);
   });
 
   it('a redelivered message id is reported as a duplicate and writes nothing', async () => {

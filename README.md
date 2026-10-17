@@ -166,14 +166,19 @@ The app writes one JSON object per line to stdout (`LOG_LEVEL`, default `info`).
 `/health/*` are not logged.
 
 Logs never carry amounts, balances, player ids, request bodies or error messages. The fields a line may contain are the
-allowlist in `src/infrastructure/logging/log-fields.ts`; a key that is not listed is dropped, so logging more is a
-deliberate edit there.
+allowlist in `src/infrastructure/logging/log-fields.ts`; every line is filtered against it just before it is written, so a
+key that is not listed is dropped whichever way it was added, and logging more is a deliberate edit there.
 
 ## Metrics
 
 `GET /metrics` serves the Prometheus text format (public, like the health checks; it is not written to the request log).
-Counters are per instance, so sum them across instances. The gauges are read from PostgreSQL and SQS at each scrape, so
-every instance reports the same value; a gauge whose source is unreachable reads `NaN`.
+Counters are per instance, so sum them across instances. The gauges are read from PostgreSQL and SQS, so every instance
+reports the same value; a gauge whose source is unreachable reads `NaN`. The gauges are reused for `METRICS_CACHE_MS`
+(default 5000, 0 = read on every scrape) and scrapes that arrive together share one read.
+
+The endpoint is open on purpose, like the health checks: a scraper has no credentials, and authentication is a stub in this
+project (decision #49). It exposes counts and timings, never identifiers, but it does read PostgreSQL and SQS, so in a
+real deployment keep it on an internal network or behind the guard once real authentication exists.
 
 | Metric | Meaning |
 | --- | --- |
@@ -184,7 +189,7 @@ every instance reports the same value; a gauge whose source is unreachable reads
 | `wagering_message_retries_total`, `wagering_messages_dead_lettered_total` | queue messages left for redelivery, and sent to the DLQ as permanently invalid |
 | `wagering_outbox_publish_failures_total{outcome}` | failed publish attempts; `parked` is the last one |
 | `wagering_reconciliation_divergences_total` | reconciliations that found a balance different from the ledger |
-| `wagering_outbox_pending_events`, `wagering_outbox_lag_seconds`, `wagering_outbox_parked_events` | events waiting, age of the oldest, and parked events (each holds its wallet's later events) |
+| `wagering_outbox_pending_events`, `wagering_outbox_lag_seconds`, `wagering_outbox_parked_events` | events not yet published, age of the oldest, and parked events. Events held behind a parked one count as pending and keep the lag growing, so a held wallet shows as a rising lag; `parked > 0` tells it apart from a slow publisher |
 | `wagering_dlq_messages` | messages waiting in the wager DLQ |
 | `wagering_dependency_up{dependency}` | 1 when PostgreSQL or SQS answers the readiness probe |
 
@@ -196,7 +201,8 @@ Labels hold kinds, statuses and outcomes only, never wallet, player or provider 
 
 A request waits for its wallet's lock inside its SQL transaction and holds a connection meanwhile. `WALLET_LOCK_TIMEOUT_MS`
 (default 5000, 0 = no limit) caps that wait, queue included: past it the transaction rolls back and the request gets
-`503` with `Retry-After`, nothing persisted, so the provider resends the same `Idempotency-Key`. The cap is a
+`503` with `Retry-After`, nothing persisted, so the provider resends the same `Idempotency-Key`. A queue message that
+times out is retried four times later than other transient failures (decision #66). The cap is a
 `statement_timeout` applied to the lock statement only (decision #65). `lock_timeout` was not used: it limits each wait
 step, and in a queue behind a hot wallet every step is short, so it never fires.
 

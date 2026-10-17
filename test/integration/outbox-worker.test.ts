@@ -221,6 +221,22 @@ describe('OutboxWorker (real PostgreSQL and MiniStack)', () => {
     expect(row!.attempts).toBe(2);
   });
 
+  it('reports the last failed attempt as parked', async () => {
+    await openWallet('a');
+    const flaky = new FlakyPublisher(new SqsEventPublisher(sqs, queueName));
+    flaky.failures = 100;
+    const metrics = new CountingMetrics();
+
+    const worker = instance({ publisher: flaky, retry: { baseMs: 10, capMs: 20, maxAttempts: 3 }, metrics });
+    worker.start();
+    const deadline = Date.now() + 10_000;
+    while (!metrics.outboxFailures.includes('parked') && Date.now() < deadline) await sleep(25);
+
+    expect(metrics.outboxFailures).toEqual(['retry', 'retry', 'parked']);
+    const [row] = await query<{ failed_at: Date | null }>('select failed_at from outbox_messages');
+    expect(row!.failed_at).not.toBeNull();
+  });
+
   it('stop() waits for the publish in flight and leaves a consistent row', async () => {
     await openWallet('a');
     const flaky = new FlakyPublisher(new SqsEventPublisher(sqs, queueName));

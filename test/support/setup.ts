@@ -13,6 +13,8 @@ process.env.OUTBOX_WORKER = 'off';
 process.env.SQS_CONSUMER = 'off';
 // Quiet by default; the logging tests ask for `info` on the instances they start.
 process.env.LOG_LEVEL = 'warn';
+// Tests read the gauges right after changing the data, so no caching.
+process.env.METRICS_CACHE_MS = '0';
 // The SQS emulator accepts any credentials, but the AWS SDK refuses to sign without some.
 process.env.AWS_ACCESS_KEY_ID ??= 'test';
 process.env.AWS_SECRET_ACCESS_KEY ??= 'test';

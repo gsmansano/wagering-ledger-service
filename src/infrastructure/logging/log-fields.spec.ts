@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { errorFields, LOGGABLE_FIELDS, loggable } from './log-fields';
+import { errorFields, filterLogLine, LOGGABLE_FIELDS, loggable } from './log-fields';
 
 describe('loggable', () => {
   it('keeps identifiers, kind, status and failure code', () => {
@@ -15,6 +15,23 @@ describe('loggable', () => {
   it('lists no money or player field', () => {
     for (const forbidden of ['amount', 'balance', 'money', 'difference', 'playerId', 'body', 'errorMessage']) {
       expect(LOGGABLE_FIELDS.has(forbidden)).toBe(false);
+    }
+  });
+});
+
+describe('filterLogLine', () => {
+  it('keeps pino\'s own fields and the allowed ones, and drops the rest, ending the line', () => {
+    const line = JSON.stringify({ level: 'info', time: 't', msg: 'm', walletId: 'w', amount: '25.00', req: { method: 'GET' }, playerId: 'p' });
+
+    const out = filterLogLine(`${line}\n`);
+
+    expect(out.endsWith('\n')).toBe(true);
+    expect(JSON.parse(out)).toEqual({ level: 'info', time: 't', msg: 'm', walletId: 'w', req: { method: 'GET' } });
+  });
+
+  it('never writes a line it could not check', () => {
+    for (const unchecked of ['not json', '[1,2]', 'null', '"text"']) {
+      expect(JSON.parse(filterLogLine(unchecked))).toEqual({ level: 'error', msg: 'A log line that was not JSON was dropped' });
     }
   });
 });

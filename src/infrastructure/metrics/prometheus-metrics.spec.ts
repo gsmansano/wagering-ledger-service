@@ -50,6 +50,28 @@ describe('PrometheusMetrics', () => {
     expect(body).toContain('wagering_dependency_up{dependency="postgres"} 1');
   });
 
+  it('reuses the gauges inside the cache window and reads again after it', async () => {
+    let reads = 0;
+    const metrics = new PrometheusMetrics({ ...healthy, dlqDepth: async () => ++reads }, 60);
+
+    await metrics.render();
+    const second = await metrics.render();
+    expect(reads).toBe(1);
+    expect(second.body).toContain('wagering_dlq_messages 1');
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect((await metrics.render()).body).toContain('wagering_dlq_messages 2');
+  });
+
+  it('shares one read between scrapes that arrive together', async () => {
+    let reads = 0;
+    const metrics = new PrometheusMetrics({ ...healthy, dlqDepth: async () => (await Bun.sleep(20), ++reads) });
+
+    await Promise.all([metrics.render(), metrics.render(), metrics.render()]);
+
+    expect(reads).toBe(1);
+  });
+
   it('reports a dependency that is down as 0', async () => {
     const metrics = new PrometheusMetrics({ ...healthy, readiness: async () => ({ ready: false, checks: { postgres: 'up', sqs: 'down' } }) });
 

@@ -217,7 +217,6 @@ export class SqsConsumer {
   /** Explicit DLQ send, then delete. If the send fails the message stays and the redrive policy still applies. */
   private async deadLetter(message: Message, disposition: Extract<MessageDisposition, { kind: 'dead-letter' }>): Promise<boolean> {
     const { dlq } = await this.queues();
-    this.metrics.messageDeadLettered();
     this.logger.error(
       { event: 'message_dead_lettered', messageId: message.MessageId, errorName: disposition.code, errorMessage: disposition.reason },
       'Message is permanently invalid',
@@ -236,6 +235,8 @@ export class SqsConsumer {
         },
       }),
     );
+    // Counted once the DLQ has the message: a failed send leaves it to be received (and counted) again.
+    this.metrics.messageDeadLettered();
     await this.delete(message);
     return true;
   }

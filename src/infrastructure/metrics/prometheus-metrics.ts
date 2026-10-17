@@ -6,7 +6,7 @@ import type { ReadinessReport } from '../readiness.service';
 export interface OutboxStats {
   /** Events waiting to be published (neither published nor parked). */
   pending: number;
-  /** Age in seconds of the oldest of them; 0 when there are none. */
+  /** Age in seconds of the oldest of them, held ones included (see `readOutboxStats`); 0 when there are none. */
   lagSeconds: number;
   /** Events given up on after the retry limit, each holding the later events of its wallet (decision #58). */
   parked: number;
@@ -85,12 +85,12 @@ export class PrometheusMetrics implements Metrics {
 
   private readonly outboxPending = new Gauge({
     name: 'wagering_outbox_pending_events',
-    help: 'Outbox events waiting to be published',
+    help: 'Outbox events not yet published and not parked, including events held behind a parked one',
     registers: [this.registry],
   });
   private readonly outboxLag = new Gauge({
     name: 'wagering_outbox_lag_seconds',
-    help: 'Age of the oldest outbox event waiting to be published',
+    help: 'Age of the oldest unparked outbox event not yet published, including events held behind a parked one',
     registers: [this.registry],
   });
   private readonly outboxParked = new Gauge({
@@ -110,7 +110,17 @@ export class PrometheusMetrics implements Metrics {
     registers: [this.registry],
   });
 
-  constructor(private readonly sources: ScrapeSources) {}
+  private refreshedAt = Number.NEGATIVE_INFINITY;
+  private refreshing: Promise<void> | undefined;
+
+  /**
+   * `gaugeTtlMs` is how long the gauges are reused: the endpoint is public, and every refresh reads PostgreSQL and
+   * SQS, so scrapes inside the window (or at the same moment) share one read. 0 reads on every scrape.
+   */
+  constructor(
+    private readonly sources: ScrapeSources,
+    private readonly gaugeTtlMs = 0,
+  ) {}
 
   transactionStatus(kind: WagerTransactionKind, status: WagerTransactionStatus): void {
     this.transactions.inc({ kind, status });
@@ -154,7 +164,17 @@ export class PrometheusMetrics implements Metrics {
     return { contentType: this.registry.contentType, body: await this.registry.metrics() };
   }
 
-  private async refreshGauges(): Promise<void> {
+  private refreshGauges(): Promise<void> {
+    if (this.refreshing !== undefined) return this.refreshing; // a read is under way: share it
+    if (Date.now() - this.refreshedAt < this.gaugeTtlMs) return Promise.resolve();
+    this.refreshing = this.readSources().finally(() => {
+      this.refreshedAt = Date.now();
+      this.refreshing = undefined;
+    });
+    return this.refreshing;
+  }
+
+  private async readSources(): Promise<void> {
     // A gauge cannot be cleared (reset() sets 0), so a failed source sets NaN explicitly.
     await Promise.allSettled([
       this.sources.outbox().then(

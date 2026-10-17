@@ -79,11 +79,14 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
     {
       provide: PrometheusMetrics,
       useFactory: (em: EntityManager, sqs: SQSClient, readiness: ReadinessService) =>
-        new PrometheusMetrics({
-          outbox: () => readOutboxStats(em),
-          dlqDepth: () => queueDepth(sqs, WAGER_DLQ),
-          readiness: () => readiness.check(),
-        }),
+        new PrometheusMetrics(
+          {
+            outbox: () => readOutboxStats(em),
+            dlqDepth: () => queueDepth(sqs, WAGER_DLQ),
+            readiness: () => readiness.check(),
+          },
+          loadConfig().metricsCacheMs,
+        ),
       inject: [EntityManager, SQSClient, ReadinessService],
     },
     {

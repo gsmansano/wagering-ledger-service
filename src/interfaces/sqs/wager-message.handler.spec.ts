@@ -3,6 +3,7 @@ import { IdempotencyConflictError } from '../../application/transaction/idempote
 import { InboxPayloadConflictError } from '../../application/transaction/inbox-payload-conflict.error';
 import type { ProcessWagerTransaction } from '../../application/transaction/process-wager-transaction';
 import { UnresolvedConflictError } from '../../application/transaction/unresolved-conflict.error';
+import { WalletLockTimeoutError } from '../../application/wallet/wallet-lock-timeout.error';
 import { WalletNotFoundError } from '../../application/wallet/wallet-not-found.error';
 import { DomainError } from '../../domain/shared/domain-error';
 import { InvalidInputError } from '../../domain/shared/invalid-input-error';
@@ -88,6 +89,16 @@ describe('WagerMessageHandler', () => {
       for (const error of [new Error('boom'), new UnresolvedConflictError('p', 'k'), new DomainError('invalid transition')]) {
         expect((await failing(error).handle(body, 1)).kind).toBe('retry');
       }
+    });
+
+    it('retries a wallet-lock timeout four times later than other transient errors, up to the cap', async () => {
+      const timeout = new WalletLockTimeoutError('wallet-1');
+      const delays: unknown[] = [];
+      for (const receiveCount of [1, 2, 3]) {
+        const result = await failing(timeout).handle(body, receiveCount);
+        delays.push(result.kind === 'retry' && result.delayMs);
+      }
+      expect(delays).toEqual([4_000, 5_000, 5_000]); // 1 s, 2 s, 4 s times four, capped at 5 s
     });
 
     it('treats a missing receive count as the first attempt', async () => {

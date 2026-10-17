@@ -3,8 +3,10 @@ import type { OutboxStats } from '../metrics/prometheus-metrics';
 
 /**
  * One statement over the unpublished rows (the partial indexes of the claim query cover them). The lag is the age of
- * the oldest event that is still expected to go out, so a parked event does not make it grow without bound; parked
- * events have their own count.
+ * the oldest event that has not gone out and is not itself parked. Events held behind a parked event of the same
+ * wallet (decision #58) are not parked, so they count: while a wallet is held the lag keeps growing and `pending`
+ * includes its held events. That is deliberate (a stuck wallet is loud); `parked` is the count that tells a held
+ * wallet apart from a slow publisher.
  */
 export async function readOutboxStats(em: EntityManager): Promise<OutboxStats> {
   const rows = await em.getConnection().execute<{ pending: string; parked: string; lag_seconds: string }[]>(

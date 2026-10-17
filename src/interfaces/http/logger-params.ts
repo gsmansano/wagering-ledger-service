@@ -3,17 +3,17 @@ import type { Params } from 'nestjs-pino';
 import { stdTimeFunctions } from 'pino';
 import { correlationIdFrom } from './request-parsing';
 import { newId } from '../../infrastructure/id-generator';
-import { loggable } from '../../infrastructure/logging/log-fields';
+import { filterLogLine } from '../../infrastructure/logging/log-fields';
 
 // Health probes and metric scrapes arrive every few seconds from the orchestrator and would drown the log.
 const QUIET_PATHS = ['/health/', '/metrics'];
 
 /**
- * JSON lines, one per event. `log` filters what call sites pass, `bindings` what `assign` and child loggers
- * add; both go through the allowlist in `log-fields.ts`. The request line carries the method, the path
- * without its query and the status, never headers or the body.
+ * JSON lines, one per event, each passed through the allowlist in `log-fields.ts` just before it is written, so no
+ * field can reach the output unlisted. The request line carries the method, the path without its query and the
+ * status, never headers or the body. `write` is where finished lines go (standard output by default).
  */
-export function createLoggerParams(level: string): Params {
+export function createLoggerParams(level: string, write: (line: string) => void = (line) => void process.stdout.write(line)): Params {
   return {
     // Lets `PinoLogger.assign` in a controller reach the request line, not just later lines of the same request.
     assignResponse: true,
@@ -21,11 +21,8 @@ export function createLoggerParams(level: string): Params {
       level,
       base: null, // no pid or hostname
       timestamp: stdTimeFunctions.isoTime,
-      formatters: {
-        level: (label) => ({ level: label }),
-        log: loggable,
-        bindings: loggable,
-      },
+      formatters: { level: (label) => ({ level: label }) },
+      stream: { write: (line: string) => write(filterLogLine(line)) },
       // The caller's X-Correlation-Id when it is plain, otherwise a new one; the same rule as the use cases.
       genReqId: (req: IncomingMessage) => correlationIdFrom(headerOf(req, 'x-correlation-id')) ?? newId(),
       customProps: (req: IncomingMessage) => ({ correlationId: req.id }),
