@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { dlqAttributes, mainQueueAttributes } from './queue-attributes';
+import { dlqAttributes, eventsQueueAttributes, mainQueueAttributes } from './queue-attributes';
 
 describe('queue attributes', () => {
-  it('declares both queues as FIFO without content-based deduplication', () => {
-    for (const attrs of [dlqAttributes(), mainQueueAttributes('arn:dlq', 5)]) {
+  it('declares every queue as FIFO without content-based deduplication', () => {
+    for (const attrs of [dlqAttributes(), mainQueueAttributes('arn:dlq', 5), eventsQueueAttributes()]) {
       expect(attrs.FifoQueue).toBe('true');
       expect(attrs.ContentBasedDeduplication).toBe('false');
     }

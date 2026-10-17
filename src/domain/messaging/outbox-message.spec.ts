@@ -90,6 +90,26 @@ describe('OutboxMessage', () => {
     });
   });
 
+  describe('requeue', () => {
+    it('brings a parked message back as pending, due now, with a fresh attempt count', () => {
+      const msg = newMessage();
+      for (let i = 0; i < 20; i++) msg.scheduleRetry(t0);
+      msg.requeue();
+      expect(msg.isPending()).toBe(true);
+      expect(msg.failedAt).toBeUndefined();
+      expect(msg.attempts).toBe(0);
+      expect(msg.isDue(t0)).toBe(true);
+    });
+
+    it('is refused for a message that is pending or published', () => {
+      const pending = newMessage();
+      expect(() => pending.requeue()).toThrow(DomainError);
+      const published = newMessage();
+      published.markPublished(t0);
+      expect(() => published.requeue()).toThrow(DomainError);
+    });
+  });
+
   describe('markPublished', () => {
     it('ends the lifecycle', () => {
       const msg = newMessage();

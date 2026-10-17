@@ -56,6 +56,34 @@ describe('migrations (real PostgreSQL)', () => {
     return rows[0]!.exists;
   };
 
+  it('reverts the outbox sequence and numbers existing rows in publication order when re-applied', async () => {
+    expect(await columnExists('outbox_messages', 'sequence')).toBe(true);
+    expect(await indexExists('outbox_messages_unpublished')).toBe(true);
+    expect(await indexExists('outbox_messages_due')).toBe(false);
+
+    await orm.migrator.down();
+    expect(await columnExists('outbox_messages', 'sequence')).toBe(false);
+    expect(await indexExists('outbox_messages_due')).toBe(true);
+    expect(await indexExists('outbox_messages_unpublished')).toBe(false);
+
+    // Two rows written without a sequence, the later one inserted first: the backfill follows occurred_at.
+    const db = orm.em.getConnection();
+    const wallet = crypto.randomUUID();
+    const [late, early] = [crypto.randomUUID(), crypto.randomUUID()];
+    for (const [id, at] of [[late, '2026-10-16T12:00:02Z'], [early, '2026-10-16T12:00:01Z']] as const) {
+      await db.execute(`insert into outbox_messages (id, aggregate_id, event_type, payload, occurred_at) values (?, ?, 'X', '{}', ?)`, [id, wallet, at]);
+    }
+
+    await orm.migrator.up();
+    const rows = await db.execute<{ id: string; sequence: string }[]>('select id, sequence from outbox_messages order by sequence');
+    expect(rows.map((r) => r.id)).toEqual([early, late]);
+    // The identity continues after the backfilled numbers.
+    await db.execute(`insert into outbox_messages (id, aggregate_id, event_type, payload, occurred_at) values (?, ?, 'X', '{}', now())`, [crypto.randomUUID(), wallet]);
+    const max = await db.execute<{ max: string }[]>('select max(sequence) as max from outbox_messages');
+    expect(Number(max[0]!.max)).toBe(3);
+    await db.execute('truncate outbox_messages');
+  });
+
   const reversalIndex = async () =>
     (
       await orm.em
@@ -68,6 +96,7 @@ describe('migrations (real PostgreSQL)', () => {
   it('reverts the one-reversal-per-reference index to one per reference and kind, and re-applies it', async () => {
     expect(await reversalIndex()).toContain('(reference_transaction_id)');
 
+    await orm.migrator.down(); // outbox sequence
     await orm.migrator.down();
     expect(await reversalIndex()).toContain('(reference_transaction_id, kind)');
 
@@ -79,6 +108,7 @@ describe('migrations (real PostgreSQL)', () => {
     expect(await columnExists('ledger_entries', 'sequence')).toBe(true);
     expect(await indexExists('ledger_entries_wallet_page')).toBe(false);
 
+    await orm.migrator.down(); // outbox sequence
     await orm.migrator.down(); // one reversal per reference
     await orm.migrator.down();
     expect(await columnExists('ledger_entries', 'sequence')).toBe(false);
@@ -115,6 +145,7 @@ describe('migrations (real PostgreSQL)', () => {
   it('reverts the idempotency key scope one step further back', async () => {
     expect(await constraintExists('wager_transactions_provider_idempotency_key_key')).toBe(true);
 
+    await orm.migrator.down(); // outbox sequence
     await orm.migrator.down(); // one reversal per reference
     await orm.migrator.down(); // ledger sequence
     await orm.migrator.down(); // idempotency key scope

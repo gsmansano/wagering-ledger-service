@@ -1,8 +1,8 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { CreateQueueCommand, GetQueueAttributesCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { loadConfig } from '../../config';
-import { dlqAttributes, mainQueueAttributes } from './queue-attributes';
-import { WAGER_DLQ, WAGER_QUEUE } from './queue-names';
+import { dlqAttributes, eventsQueueAttributes, mainQueueAttributes } from './queue-attributes';
+import { EVENTS_QUEUE, WAGER_DLQ, WAGER_QUEUE } from './queue-names';
 
 // Creates the queues on startup. CreateQueue is idempotent for identical
 // attributes, so every instance can run this concurrently.
@@ -29,6 +29,7 @@ export class QueueProvisioner implements OnApplicationBootstrap {
         Attributes: mainQueueAttributes(dlqArn, loadConfig().sqs.maxReceiveCount),
       }),
     );
-    this.logger.log(`Queues ready: ${WAGER_QUEUE}, ${WAGER_DLQ}`);
+    await this.sqs.send(new CreateQueueCommand({ QueueName: EVENTS_QUEUE, Attributes: eventsQueueAttributes() }));
+    this.logger.log(`Queues ready: ${WAGER_QUEUE}, ${WAGER_DLQ}, ${EVENTS_QUEUE}`);
   }
 }

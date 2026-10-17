@@ -359,6 +359,10 @@ describe('schema constraints (real PostgreSQL)', () => {
     it('rejects negative attempts', async () => {
       await expect(outbox({ attempts: -1 })).rejects.toThrow(/attempts/);
     });
+
+    it('numbers messages itself: a caller cannot choose the sequence', async () => {
+      await expect(outbox({ sequence: 5 })).rejects.toThrow(/sequence/);
+    });
   });
 
   describe('indexes', () => {
@@ -369,7 +373,8 @@ describe('schema constraints (real PostgreSQL)', () => {
       const names = rows.map((r) => r.indexname);
       expect(names).toEqual(
         expect.arrayContaining([
-          'outbox_messages_due',
+          'outbox_messages_pending',
+          'outbox_messages_unpublished',
           'wager_transactions_pending_reference_due',
           'ledger_entries_wallet_sequence_key',
         ]),

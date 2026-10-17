@@ -123,6 +123,16 @@ export class OutboxMessage {
     this._nextAttemptAt = new Date(now.getTime() + delayMs);
   }
 
+  /** Brings a parked message back, due now with a fresh attempt count: the operator's way to unblock its wallet. */
+  requeue(): void {
+    if (!this.isFailed()) {
+      throw new DomainError(`Cannot requeue outbox message ${this.id}: it is not parked`);
+    }
+    this._failedAt = undefined;
+    this._attempts = 0;
+    this._nextAttemptAt = undefined;
+  }
+
   private assertPending(action: string): void {
     if (!this.isPending()) {
       const state = this.isFailed() ? 'parked' : 'published';

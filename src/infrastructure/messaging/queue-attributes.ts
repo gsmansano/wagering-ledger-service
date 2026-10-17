@@ -21,3 +21,13 @@ export function mainQueueAttributes(dlqArn: string, maxReceiveCount: number): Re
     RedrivePolicy: JSON.stringify({ deadLetterTargetArn: dlqArn, maxReceiveCount }),
   };
 }
+
+export function eventsQueueAttributes(): Record<string, string> {
+  return {
+    FifoQueue: 'true',
+    // The publisher sends the event id as the deduplication id; we never rely on body hashing.
+    ContentBasedDeduplication: 'false',
+    // 14 days, the SQS maximum: the consumers are other systems, which may be down for a while.
+    MessageRetentionPeriod: '1209600',
+  };
+}
