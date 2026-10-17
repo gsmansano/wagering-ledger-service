@@ -30,6 +30,6 @@ export class QueueProvisioner implements OnApplicationBootstrap {
       }),
     );
     await this.sqs.send(new CreateQueueCommand({ QueueName: EVENTS_QUEUE, Attributes: eventsQueueAttributes() }));
-    this.logger.log(`Queues ready: ${WAGER_QUEUE}, ${WAGER_DLQ}, ${EVENTS_QUEUE}`);
+    this.logger.log({ event: 'queues_ready' }, `Queues ready: ${WAGER_QUEUE}, ${WAGER_DLQ}, ${EVENTS_QUEUE}`);
   }
 }

@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { ResolvePendingReference } from '../../application/transaction/resolve-pending-reference';
+import { errorFields } from '../logging/log-fields';
 
 export interface PendingReferenceWorkerOptions {
   /** When false the Nest lifecycle does not start polling (tests and one-off runs); `start()` still works. */
@@ -70,7 +71,7 @@ export class PendingReferenceWorker {
       await this.tick();
     } catch (error) {
       // A failed poll must not kill the loop: the rows stay pending and the next poll retries them.
-      this.logger.error(`Pending-reference poll failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.error({ event: 'pending_reference_poll_failed', ...errorFields(error) }, 'Pending-reference poll failed');
     } finally {
       if (!this.stopped) this.schedule();
     }

@@ -114,8 +114,7 @@ describe('reconciliation and readiness (real PostgreSQL + SQS emulator)', () => 
       expect(await balanceOf(walletId)).toBe('75.00'); // not fixed
       expect(await query('select 1 from ledger_entries where wallet_id = ?', [walletId])).toHaveLength(2);
       expect(logged).toHaveBeenCalledTimes(1);
-      const entry = JSON.parse(String(logged.mock.calls[0]![0]));
-      expect(entry).toEqual({ event: 'reconciliation_divergence', walletId, difference: '5.00', checkedEntries: 2 });
+      expect(logged.mock.calls[0]![0]).toEqual({ event: 'reconciliation_divergence', walletId });
       logged.mockRestore();
     }, 30_000);
 

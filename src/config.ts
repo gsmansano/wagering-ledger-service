@@ -1,5 +1,7 @@
 export interface AppConfig {
   port: number;
+  /** Minimum level of the JSON log: trace, debug, info, warn, error, fatal or silent. */
+  logLevel: string;
   databaseUrl: string;
   /** Connections one instance may hold. A request waiting for the wallet lock holds one for the whole wait. */
   databasePoolMax: number;
@@ -44,6 +46,7 @@ export interface AppConfig {
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {
   return {
     port: Number(env.PORT ?? 3000),
+    logLevel: env.LOG_LEVEL ?? 'info',
     databaseUrl: env.DATABASE_URL ?? 'postgres://wagering:wagering@localhost:5432/wagering',
     databasePoolMax: Number(env.DATABASE_POOL_MAX ?? 10),
     sqs: {

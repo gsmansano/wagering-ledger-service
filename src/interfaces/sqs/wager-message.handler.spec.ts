@@ -33,7 +33,10 @@ const failing = (error: unknown) => handlerFor(() => Promise.reject(error));
 
 describe('WagerMessageHandler', () => {
   it('acks a processed message', async () => {
-    const handler = handlerFor(async () => ({ idempotentReplay: false }));
+    const handler = handlerFor(async () => ({
+      transaction: { id: 'transaction-id', status: 'PROCESSED', failureCode: undefined },
+      idempotentReplay: false,
+    }));
     expect(await handler.handle(body, 1)).toEqual({ kind: 'ack', outcome: 'processed' });
   });
 

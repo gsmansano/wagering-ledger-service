@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { PublishOutcome, type PublishOutbox } from '../../application/outbox/publish-outbox';
+import { errorFields } from '../logging/log-fields';
 
 export interface OutboxWorkerOptions {
   /** When false the Nest lifecycle does not start polling (tests and one-off runs); `start()` still works. */
@@ -57,12 +58,13 @@ export class OutboxWorker {
       handled += 1;
       // Ids and counts only, never the payload: events carry player and money data.
       const { id, eventType, aggregateId, attempts } = result.message;
-      const reason = result.error instanceof Error ? result.error.message : String(result.error);
+      const fields = { eventId: id, eventType, walletId: aggregateId, attempt: attempts, ...errorFields(result.error) };
       if (result.outcome === PublishOutcome.Retried) {
-        this.logger.warn(`Publishing ${eventType} ${id} failed (attempt ${attempts}), will retry: ${reason}`);
+        this.logger.warn({ event: 'outbox_publish_retry', ...fields }, 'Publishing an event failed, will retry');
       } else if (result.outcome === PublishOutcome.Parked) {
         this.logger.error(
-          `Parked ${eventType} ${id} after ${attempts} failed attempts; later events of wallet ${aggregateId} are held until it is requeued: ${reason}`,
+          { event: 'outbox_event_parked', ...fields },
+          'Event parked; later events of its wallet are held until it is requeued',
         );
       }
     }
@@ -80,7 +82,7 @@ export class OutboxWorker {
       await this.tick();
     } catch (error) {
       // A failed poll must not kill the loop: the rows stay unpublished and the next poll retries them.
-      this.logger.error(`Outbox poll failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.error({ event: 'outbox_poll_failed', ...errorFields(error) }, 'Outbox poll failed');
     } finally {
       if (!this.stopped) this.schedule();
     }

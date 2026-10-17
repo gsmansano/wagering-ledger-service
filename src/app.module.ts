@@ -2,6 +2,7 @@ import { Logger, Module } from '@nestjs/common';
 import { GetQueueUrlCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
+import { LoggerModule } from 'nestjs-pino';
 import { EntityManager, PostgreSqlDriver } from '@mikro-orm/postgresql';
 import { UNIT_OF_WORK, type UnitOfWork } from './application/ports/unit-of-work';
 import type { ReferenceRetryPolicy } from './application/transaction/reference-retry-policy';
@@ -16,6 +17,7 @@ import { ReconcileWallet } from './application/wallet/reconcile-wallet';
 import { loadConfig } from './config';
 import { createOrmConfig } from './infrastructure/database/mikro-orm.config';
 import { newId } from './infrastructure/id-generator';
+import { errorFields } from './infrastructure/logging/log-fields';
 import { MikroOrmUnitOfWork } from './infrastructure/database/repositories/mikro-orm-unit-of-work';
 import { ReadinessService } from './infrastructure/readiness.service';
 import { OutboxWorker } from './infrastructure/workers/outbox.worker';
@@ -27,6 +29,7 @@ import { SqsConsumer } from './interfaces/sqs/sqs-consumer';
 import { WagerMessageHandler } from './interfaces/sqs/wager-message.handler';
 import { AuthGuard } from './interfaces/http/auth/auth.guard';
 import { ApplicationErrorFilter } from './interfaces/http/application-error.filter';
+import { createLoggerParams } from './interfaces/http/logger-params';
 import { HealthController } from './interfaces/http/health.controller';
 import { ProvidersController } from './interfaces/http/providers.controller';
 import { WageringController } from './interfaces/http/wagering.controller';
@@ -45,6 +48,7 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
       // Lets Nest inject the PostgreSQL-specific EntityManager.
       driver: PostgreSqlDriver,
     }),
+    LoggerModule.forRootAsync({ imports: [], providers: [], useFactory: () => createLoggerParams(loadConfig().logLevel) }),
     SqsModule,
   ],
   controllers: [HealthController, WalletsController, WageringController, ProvidersController],
@@ -62,7 +66,8 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
           2_000,
           (dependency, error) =>
             new Logger(ReadinessService.name).warn(
-              `${dependency} not ready: ${error instanceof Error ? error.message : String(error)}`,
+              { event: 'dependency_not_ready', dependency, ...errorFields(error) },
+              'A dependency is not ready',
             ),
         ),
       inject: [EntityManager, SQSClient],

@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, Post, Res } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 import { GetTransaction } from '../../application/query/get-transaction';
 import { ProcessWagerTransaction } from '../../application/transaction/process-wager-transaction';
 import { WagerTransactionKind } from '../../domain/transaction/wager-transaction';
@@ -12,6 +13,7 @@ export class WageringController {
   constructor(
     private readonly processWagerTransaction: ProcessWagerTransaction,
     private readonly getTransaction: GetTransaction,
+    private readonly logger: PinoLogger,
   ) {}
 
   // A read answers 200 with the stored transaction whatever its status: the status lives in the body. Only
@@ -40,7 +42,7 @@ export class WageringController {
     }
     const money = asObject(request.money, 'money');
 
-    const result = await this.processWagerTransaction.execute({
+    const command = {
       idempotencyKey,
       providerId: requiredString(request, 'providerId'),
       externalTransactionId: requiredString(request, 'externalTransactionId'),
@@ -52,7 +54,12 @@ export class WageringController {
       money: { amount: requiredString(money, 'amount'), currency: requiredString(money, 'currency') },
       referenceExternalTransactionId: optionalString(request, 'referenceExternalTransactionId'),
       correlationId: correlationIdFrom(correlationId),
-    });
+    };
+    // Added to the request line, so a failed request still says whose wallet and which kind it was.
+    this.logger.assign({ providerId: command.providerId, walletId: command.walletId, kind: command.kind });
+    const result = await this.processWagerTransaction.execute(command);
+    const { id, status, failureCode } = result.transaction;
+    this.logger.assign({ transactionId: id, status, failureCode, event: result.idempotentReplay ? 'transaction_replayed' : 'transaction_settled' });
 
     // Decision #43: 200 processed, 202 pending, 422 business rejection (a replay of any of them answers the same).
     response.status(submitStatusCode(result.transaction.status));

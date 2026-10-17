@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, Logger, Param, Post, Query } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 import { GetLedger } from '../../application/query/get-ledger';
 import { GetWallet } from '../../application/query/get-wallet';
 import { CreateWallet } from '../../application/wallet/create-wallet';
@@ -14,6 +15,7 @@ export class WalletsController {
     private readonly getWallet: GetWallet,
     private readonly getLedger: GetLedger,
     private readonly reconcileWallet: ReconcileWallet,
+    private readonly requestLog: PinoLogger,
   ) {}
 
   private readonly logger = new Logger(WalletsController.name);
@@ -29,6 +31,7 @@ export class WalletsController {
       currency: requiredString(initialBalance, 'currency'),
       initialAmount: optionalString(initialBalance, 'amount'),
     });
+    this.requestLog.assign({ walletId: wallet.id, event: 'wallet_created' });
     return toWalletView(wallet);
   }
 
@@ -60,15 +63,8 @@ export class WalletsController {
   async reconcile(@Param('walletId') walletId: string) {
     const result = await this.reconcileWallet.execute(asUuid(walletId, 'walletId'));
     if (!result.consistent) {
-      // Diagnostic fields only, no balances: enough to find the wallet and size the problem.
-      this.logger.error(
-        JSON.stringify({
-          event: 'reconciliation_divergence',
-          walletId: result.walletId,
-          difference: result.difference,
-          checkedEntries: result.checkedEntries,
-        }),
-      );
+      // The wallet id only: the amounts are in the response, and the log never carries money.
+      this.logger.error({ event: 'reconciliation_divergence', walletId: result.walletId }, 'Wallet balance differs from its ledger');
     }
     const money = (amount: string) => ({ amount, currency: result.currency });
     return {

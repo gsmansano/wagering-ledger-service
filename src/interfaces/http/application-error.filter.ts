@@ -5,6 +5,7 @@ import { WalletAlreadyExistsError } from '../../application/wallet/wallet-alread
 import { WalletNotFoundError } from '../../application/wallet/wallet-not-found.error';
 import { InvalidInputError } from '../../domain/shared/invalid-input-error';
 import { isTransientDatabaseError } from '../../infrastructure/database/transient-errors';
+import { errorFields } from '../../infrastructure/logging/log-fields';
 
 interface HttpResponse {
   status(code: number): { json(body: unknown): void };
@@ -40,13 +41,13 @@ export class ApplicationErrorFilter implements ExceptionFilter {
     } else if (error instanceof InvalidInputError) {
       response.status(400).json({ error: 'INVALID_PAYLOAD', message: error.message });
     } else if (isTransientDatabaseError(error)) {
-      this.logger.warn(`Transient failure: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.warn({ event: 'transient_failure', ...errorFields(error) }, 'Transient infrastructure failure');
       response.setHeader('Retry-After', RETRY_AFTER_SECONDS);
       response
         .status(503)
         .json({ error: 'TRANSIENT_FAILURE', message: 'The service is temporarily unavailable; retry the same request' });
     } else {
-      this.logger.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+      this.logger.error({ event: 'unexpected_error', ...errorFields(error) }, 'Unexpected error');
       response.status(500).json({ error: 'INTERNAL_ERROR', message: 'Internal server error' });
     }
   }

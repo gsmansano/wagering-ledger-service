@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { IdempotencyConflictError } from '../../application/transaction/idempotency-conflict.error';
 import { InboxPayloadConflictError } from '../../application/transaction/inbox-payload-conflict.error';
 import type { ProcessWagerTransaction } from '../../application/transaction/process-wager-transaction';
@@ -24,6 +25,8 @@ const MAX_REASON_LENGTH = 1_000;
  * bug than bad input, so it is retried a bounded number of times before the redrive policy parks it.
  */
 export class WagerMessageHandler {
+  private readonly logger = new Logger(WagerMessageHandler.name);
+
   constructor(
     private readonly processTransaction: ProcessWagerTransaction,
     private readonly backoff: RetryBackoff,
@@ -36,6 +39,29 @@ export class WagerMessageHandler {
         consumerName: WAGER_CONSUMER_NAME,
         messageId: message.messageId,
       });
+      const { command } = message;
+      if ('duplicateMessage' in result) {
+        this.logger.log(
+          { event: 'message_duplicate', messageId: message.messageId, correlationId: command.correlationId, walletId: command.walletId, providerId: command.providerId },
+          'Message already processed',
+        );
+      } else {
+        const { id, status, failureCode } = result.transaction;
+        this.logger.log(
+          {
+            event: result.idempotentReplay ? 'transaction_replayed' : 'transaction_settled',
+            messageId: message.messageId,
+            correlationId: command.correlationId,
+            transactionId: id,
+            walletId: command.walletId,
+            providerId: command.providerId,
+            kind: command.kind,
+            status,
+            failureCode,
+          },
+          'Message processed',
+        );
+      }
       // A rejection or a pending reversal is a business result, already persisted: nothing left to retry.
       return { kind: 'ack', outcome: 'duplicateMessage' in result ? 'duplicate' : 'processed' };
     } catch (error) {

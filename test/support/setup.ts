@@ -11,6 +11,8 @@ process.env.PENDING_REFERENCE_WORKER = 'off';
 process.env.OUTBOX_WORKER = 'off';
 // Same for the queue consumer: its tests build it against throwaway queues.
 process.env.SQS_CONSUMER = 'off';
+// Quiet by default; the logging tests ask for `info` on the instances they start.
+process.env.LOG_LEVEL = 'warn';
 // The SQS emulator accepts any credentials, but the AWS SDK refuses to sign without some.
 process.env.AWS_ACCESS_KEY_ID ??= 'test';
 process.env.AWS_SECRET_ACCESS_KEY ??= 'test';

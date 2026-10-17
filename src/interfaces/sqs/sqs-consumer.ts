@@ -8,6 +8,7 @@ import {
   type Message,
   type SQSClient,
 } from '@aws-sdk/client-sqs';
+import { errorFields } from '../../infrastructure/logging/log-fields';
 import type { MessageDisposition } from './message-disposition';
 
 export interface SqsConsumerOptions {
@@ -95,7 +96,7 @@ export class SqsConsumer {
     clearTimeout(timer);
     if (!completed) {
       const pending = [...this.inFlight.values()];
-      this.logger.warn(`Shutdown timeout: handing ${pending.length} unfinished message(s) back to the queue`);
+      this.logger.warn({ event: 'shutdown_timeout', count: pending.length }, 'Shutdown timeout: handing unfinished messages back to the queue');
       this.inFlight.clear();
       await Promise.all(pending.map((message) => this.setVisibility(message, 0)));
     }
@@ -142,7 +143,7 @@ export class SqsConsumer {
       } catch (error) {
         if (this.stopped) break; // the receive was aborted by stop()
         // A failed receive (emulator down, queue not created yet) must not kill the loop.
-        this.logger.error(`SQS poll failed: ${describe(error)}`);
+        this.logger.error({ event: 'sqs_poll_failed', ...errorFields(error) }, 'SQS poll failed');
         await new Promise((resolve) => setTimeout(resolve, ERROR_BACKOFF_MS));
       }
     }
@@ -193,7 +194,10 @@ export class SqsConsumer {
           await this.delete(message);
           return true;
         case 'retry':
-          this.logger.warn(`Message ${message.MessageId} will be retried (receive ${receiveCount}): ${describe(disposition.cause)}`);
+          this.logger.warn(
+            { event: 'message_retry', messageId: message.MessageId, receiveCount, ...errorFields(disposition.cause) },
+            'Message will be retried',
+          );
           await this.setVisibility(message, Math.ceil(disposition.delayMs / 1000));
           return false;
         case 'dead-letter':
@@ -202,7 +206,7 @@ export class SqsConsumer {
     } catch (error) {
       // The effect is committed or deliberately absent; whatever failed here only delays the message, and the
       // inbox absorbs a redelivery. It returns when its visibility timeout ends.
-      this.logger.error(`Could not settle message ${message.MessageId}: ${describe(error)}`);
+      this.logger.error({ event: 'message_settle_failed', messageId: message.MessageId, ...errorFields(error) }, 'Could not settle message');
       return false;
     }
   }
@@ -210,7 +214,10 @@ export class SqsConsumer {
   /** Explicit DLQ send, then delete. If the send fails the message stays and the redrive policy still applies. */
   private async deadLetter(message: Message, disposition: Extract<MessageDisposition, { kind: 'dead-letter' }>): Promise<boolean> {
     const { dlq } = await this.queues();
-    this.logger.error(`Message ${message.MessageId} is permanently invalid (${disposition.code}): ${disposition.reason}`);
+    this.logger.error(
+      { event: 'message_dead_lettered', messageId: message.MessageId, errorName: disposition.code, errorMessage: disposition.reason },
+      'Message is permanently invalid',
+    );
     await this.sqs.send(
       new SendMessageCommand({
         QueueUrl: dlq,
@@ -245,11 +252,7 @@ export class SqsConsumer {
         }),
       );
     } catch (error) {
-      this.logger.error(`Could not change visibility of ${message.MessageId}: ${describe(error)}`);
+      this.logger.error({ event: 'message_visibility_failed', messageId: message.MessageId, ...errorFields(error) }, 'Could not change message visibility');
     }
   }
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }

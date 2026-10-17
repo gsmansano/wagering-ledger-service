@@ -27,6 +27,9 @@
     "@nestjs/core": "12.1.3",
     "@nestjs/platform-express": "12",
     "decimal.js": "^10.6.0",
+    "nestjs-pino": "4",
+    "pino": "10",
+    "pino-http": "11",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2"
   },

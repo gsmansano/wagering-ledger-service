@@ -157,6 +157,17 @@ serializes its writers, `ON CONFLICT` makes duplicates replays, and every worker
 - `test/integration/hot-wallet.test.ts` measures what a burst on one wallet costs other wallets (decision #62 in `PLAN.md`).
   A request waiting for a wallet lock holds a database connection, so size the pool with `DATABASE_POOL_MAX` (default 10).
 
+## Logs
+
+The app writes one JSON object per line to stdout (`LOG_LEVEL`, default `info`). Every request line carries `correlationId`
+(the caller's `X-Correlation-Id`, or a generated one), and a submitted transaction adds `providerId`, `walletId`, `kind`,
+`transactionId`, `status` and `failureCode`. A queue message produces the same line with its `messageId`. Probes on
+`/health/*` are not logged.
+
+Logs never carry amounts, balances, player ids, request bodies or error messages. The fields a line may contain are the
+allowlist in `src/infrastructure/logging/log-fields.ts`; a key that is not listed is dropped, so logging more is a
+deliberate edit there.
+
 ## Project layout
 
 ```
