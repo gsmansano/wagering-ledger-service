@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import type { SQSClient } from '@aws-sdk/client-sqs';
 import type { MikroORM } from '@mikro-orm/postgresql';
-import { assertAnswersMatchDatabase, assertInvariants, waitForConvergence, type ConvergenceTarget } from '../support/convergence';
+import { assertAnswersMatchDatabase, assertInvariants, assertProviderAnswers, waitForConvergence, type ConvergenceTarget } from '../support/convergence';
 import { initTestOrm, truncateAll } from '../support/database';
 import { startClusterFixture, type ClusterFixture } from '../support/cluster-fixture';
 import type { Cluster } from '../support/instances';
@@ -50,17 +50,15 @@ describe('several instances under mixed load (real processes, PostgreSQL and Min
     try {
       await waitForConvergence(orm, sqs, convergence);
       await assertInvariants(orm, sqs, convergence);
+      assertProviderAnswers(records);
       await assertAnswersMatchDatabase(orm, records);
     } catch (error) {
       for (const instance of cluster.instances) console.error(`--- instance ${instance.index} ---\n${cluster.tail(instance.index)}`);
       throw new Error(`${(error as Error).message} (replay with LOAD_SEED=${SEED})`, { cause: error });
     }
 
-    // What the providers were told: nothing but final answers or "pending", never a conflict or a server error.
-    const http = records.filter((r): r is DeliveryRecord => r.httpStatus !== undefined);
+    const http = records.filter((r): r is DeliveryRecord => r.operation.channel === 'http');
     expect(http.length).toBeGreaterThan(100);
-    expect(new Set(http.map((r) => r.httpStatus)).has(500)).toBe(false);
-    for (const r of http) expect([200, 202, 422, 503]).toContain(r.httpStatus!);
 
     // A duplicate answered with the original's transaction, whichever instance and channel took it.
     const answered = new Map(http.map((r) => [r.operation.index, r]));

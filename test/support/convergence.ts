@@ -148,6 +148,19 @@ export async function assertInvariants(orm: MikroORM, sqs: SQSClient, target: Co
 }
 
 /**
+ * Every HTTP delivery ended on a final or pending answer. A 400, 409 or 500 would mean a provider was told something
+ * wrong, and a 503 or no answer at all means the retries ran out; neither may be hidden by the database being right.
+ */
+export function assertProviderAnswers(records: DeliveryRecord[]): void {
+  const http = records.filter((r) => r.operation.channel === 'http');
+  const unexpected = http.filter((r) => ![200, 202, 422].includes(r.httpStatus ?? 0));
+  expect(
+    unexpected.map((r) => `${r.operation.request.externalTransactionId}: ${r.httpStatus ?? 'no answer'}`),
+    'deliveries that did not end on 200, 202 or 422',
+  ).toEqual([]);
+}
+
+/**
  * What the providers were told must be what the database holds. A final answer (200, 422) names a settled
  * transaction with the same id and outcome; a pending answer (202) names an existing row. After a crash this is the
  * check that no acknowledged request was lost and none was applied under another id.

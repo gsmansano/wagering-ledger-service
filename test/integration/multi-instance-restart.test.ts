@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import type { MikroORM } from '@mikro-orm/postgresql';
 import { startClusterFixture, type ClusterFixture } from '../support/cluster-fixture';
-import { assertAnswersMatchDatabase, assertInvariants, waitForConvergence, type ConvergenceTarget } from '../support/convergence';
+import { assertAnswersMatchDatabase, assertInvariants, assertProviderAnswers, waitForConvergence, type ConvergenceTarget } from '../support/convergence';
 import { initTestOrm, truncateAll } from '../support/database';
 import { openWallets, planLoad, playLoad, Progress } from '../support/load';
 
@@ -51,6 +51,7 @@ describe('restart under load (real processes, PostgreSQL and MiniStack)', () => 
     try {
       await waitForConvergence(orm, sqs, convergence, 120_000);
       await assertInvariants(orm, sqs, convergence);
+      assertProviderAnswers(records);
       await assertAnswersMatchDatabase(orm, records);
     } catch (error) {
       for (const instance of cluster.instances) console.error(`--- instance ${instance.index} ---\n${cluster.tail(instance.index)}`);
