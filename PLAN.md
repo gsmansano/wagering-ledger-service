@@ -132,15 +132,14 @@ Section references (§) point to the original requirements document.
 - [x] Tests: redelivery, retry to DLQ, crash after commit and before ack
 - [x] PoC: Send a message with the AWS CLI against MiniStack and watch the ledger change
 
-## M8 — Transactional outbox — §11 _(current)_
+## M8 — Transactional outbox — §11
 
-- [ ] Publisher safe under concurrent instances (`FOR UPDATE SKIP LOCKED`) with retry backoff; per-wallet ordering, a parked event blocks its wallet (#56–#59)
+- [x] Publisher safe under concurrent instances (`FOR UPDATE SKIP LOCKED`) with retry backoff; per-wallet ordering, a parked event blocks its wallet (#56–#59)
 - [x] Settled in step 1: the explicit order of a wallet's outbox rows (#60) and the operator requeue of a parked event (#61)
-- [ ] `ARCHITECTURE.md` (M11) states the consumer contract: at-least-once, dedupe by `eventId`, gaps detectable through `walletVersion`, a parked event holds its wallet's stream
-- [ ] Tests: concurrent publishers, crash between commit and publish
-- [ ] PoC: Script that shows outbox rows being published and what happens after a crash
+- [x] Tests: concurrent publishers, crash between commit and publish
+- [x] PoC: Script that shows outbox rows being published and what happens after a crash
 
-## M9 — Multi-instance and recovery — §8, §13
+## M9 — Multi-instance and recovery — §8, §13 _(current)_
 
 - [ ] Three or more instances under mixed load on shared wallets
 - [ ] Restart mid-load with verified convergence; `balance == ledger` checked for every wallet
@@ -160,6 +159,7 @@ Section references (§) point to the original requirements document.
 - [ ] `ARCHITECTURE.md` states the ordering semantics: concurrent requests on one wallet are applied in lock-acquisition order, not arrival order, and the ledger records the order actually applied; a provider that needs A before B must wait for A's response
 - [ ] `ARCHITECTURE.md` documents the authentication decision: no-op guard now, the intended identity-provider design (decision #49) and the provider-identity check
 - [ ] `ARCHITECTURE.md` documents the HTTP status table (decision #43) and the added interpretations (rule 4, decision #36)
+- [ ] `ARCHITECTURE.md` states the event consumer contract (decisions #56–#61): at-least-once, deduplicate by `eventId`, gaps detectable through `walletVersion`, a parked event holds its wallet's stream until requeued
 - [ ] Final review of the transaction path
 - [ ] `ARCHITECTURE.md` limitations name the hot-wallet behaviour: requests queued on one wallet each hold a connection, so a large burst on one wallet can delay others until the pool is tuned or the load is spread (SQS groups per wallet, scaling out)
 

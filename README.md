@@ -28,6 +28,7 @@ bun test
 | `bun run poc:wagering` | Curl walkthrough of M4: create a wallet, BET, duplicate, overdraft, 30 parallel duplicates, then the ledger (needs the app running, see below) |
 | `bun run poc:reversals` | Curl walkthrough of M5: a REFUND before its BET is parked, the worker applies it after the BET arrives, a second reversal is refused, an orphan reversal is rejected (needs the app running with short retry timings, see below) |
 | `bun run poc:consumer` | AWS CLI walkthrough of M7: send queue messages for a BET (applied once), a duplicate (no effect) and two invalid messages (they land in the DLQ with the reason); runs `amazon/aws-cli` in Docker when `aws` is not installed (needs the app running) |
+| `bun run poc:outbox` | Walkthrough of M8: an instance commits and dies before publishing and another publishes the events, a repeated send leaves one copy in the queue, a parked event holds back its own wallet until it is requeued; starts its own app instances on ports 3021 and 3022, so the Compose `app` must be stopped (needs `postgres`, `ministack` and `migrate` running) |
 | `bun run poc:schema` | Try to break each database constraint and show PostgreSQL refusing it (needs `docker compose up`; leaves no data) |
 | `bun run typecheck` | Type-check with `tsc --noEmit` |
 | `bun run migration:up` | Apply pending migrations |
@@ -109,13 +110,47 @@ stops receiving, finishes the message it is handling, hands back the ones not st
 the other `SQS_*` variables are in `.env.example`. `bun run poc:consumer` (app running) sends messages with the AWS CLI and
 shows each outcome.
 
+### Event publication (outbox)
+
+Every balance change, ledger entry and transaction status is written in one SQL transaction together with the integration
+events it produces (`outbox_messages`). A worker running in every instance publishes them afterwards to the FIFO queue
+`wager-events.fifo`, one event per SQL transaction, claimed with `FOR UPDATE SKIP LOCKED`; the message group is the wallet and
+the deduplication id is the event id. The events are:
+
+| Event | When |
+|---|---|
+| `WagerTransactionProcessed` | Any applied transaction, including `LOSS` |
+| `WagerTransactionRejected` | A business rejection |
+| `WalletBalanceChanged` | Only when the balance changes (also the opening credit) |
+| `WagerTransactionPendingReference` | A reversal whose reference is missing |
+
+What a consumer can rely on:
+
+- **At-least-once.** An event can arrive twice (the process died after the send and before marking it published). Deduplicate by
+  `eventId`; the queue already drops a repeat of the same id within five minutes.
+- **Order per wallet.** A wallet's events are published in the order its changes were applied. A failed event waits for its
+  backoff (1s, 2s, 4s, ... capped at 5 min) and the wallet's later events wait behind it. After 20 failed sends the event is
+  parked and keeps holding its wallet; other wallets are not affected. A parked event is logged at error level.
+- **Gaps are detectable.** The `walletVersion` of a wallet's `WalletBalanceChanged` events rises by one, and each `balanceBefore` is
+  the previous `balanceAfter`.
+
+To release a parked wallet, find the event and requeue it (the worker publishes it, then the events behind it):
+
+```sql
+select id, event_type, aggregate_id, attempts, failed_at from outbox_messages where failed_at is not null;
+update outbox_messages set failed_at = null, attempts = 0, next_attempt_at = null where id = '<event id>';
+```
+
+`OUTBOX_WORKER=off` disables the publisher in one instance; the other `OUTBOX_*` variables are in `.env.example`.
+`bun run poc:outbox` shows a crash before publishing, a repeated send and a parked event.
+
 ## Project layout
 
 ```
 src/
   domain/          pure business rules, no framework or ORM imports (shared, wallet, transaction, messaging, events)
   application/     repository ports and use cases
-  infrastructure/  database (MikroORM rows, mappers, repositories, migrations) and messaging (SQS)
+  infrastructure/  database (MikroORM rows, mappers, repositories, migrations), messaging (SQS) and the background workers
   interfaces/      HTTP controllers and the SQS consumer
 test/
   integration/     tests against real PostgreSQL and MiniStack
