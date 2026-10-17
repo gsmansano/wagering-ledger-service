@@ -1,9 +1,10 @@
-import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, Post, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, Post, Req, Res } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { GetTransaction } from '../../application/query/get-transaction';
 import { ProcessWagerTransaction } from '../../application/transaction/process-wager-transaction';
 import { WagerTransactionKind } from '../../domain/transaction/wager-transaction';
-import { asObject, correlationIdFrom, asUuid, optionalString, requiredString, requiredUuid } from './request-parsing';
+import { asObject, asUuid, optionalString, requiredString, requiredUuid } from './request-parsing';
+import { requestCorrelationId } from './request-parsing';
 import { submitStatusCode, toTransactionView } from './transaction-view';
 
 const KINDS = new Set<string>(Object.values(WagerTransactionKind));
@@ -28,8 +29,8 @@ export class WageringController {
   @HttpCode(200)
   async submit(
     @Headers('idempotency-key') idempotencyKey: string | undefined,
-    @Headers('x-correlation-id') correlationId: string | undefined,
     @Body() body: unknown,
+    @Req() req: { id?: unknown },
     @Res({ passthrough: true }) response: { status(code: number): unknown },
   ) {
     if (idempotencyKey === undefined || idempotencyKey.trim() === '') {
@@ -53,7 +54,7 @@ export class WageringController {
       kind: kind as WagerTransactionKind, // checked against the enum values just above
       money: { amount: requiredString(money, 'amount'), currency: requiredString(money, 'currency') },
       referenceExternalTransactionId: optionalString(request, 'referenceExternalTransactionId'),
-      correlationId: correlationIdFrom(correlationId),
+      correlationId: requestCorrelationId(req),
     };
     // Added to the request line, so a failed request still says whose wallet and which kind it was.
     this.logger.assign({ providerId: command.providerId, walletId: command.walletId, kind: command.kind });

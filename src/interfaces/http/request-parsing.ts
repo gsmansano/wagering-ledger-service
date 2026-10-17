@@ -48,3 +48,12 @@ const CORRELATION_ID = /^[\w.:-]{1,128}$/;
 export function correlationIdFrom(header: string | undefined): string | undefined {
   return header !== undefined && CORRELATION_ID.test(header) ? header : undefined;
 }
+
+/**
+ * The id the request log line carries (`genReqId` in `logger-params.ts` applies `correlationIdFrom` or generates one),
+ * so the events written by the use case and the request line share one id. Without the logger there is none, and the
+ * use case generates its own.
+ */
+export function requestCorrelationId(req: { id?: unknown }): string | undefined {
+  return typeof req.id === 'string' ? req.id : undefined;
+}

@@ -77,6 +77,33 @@ describe('structured logs (a real instance, HTTP and SQS)', () => {
     for (const secret of [AMOUNT, '9999.00', '500.00', PLAYER, 'key-http-1']) expect(everything).not.toContain(secret);
   }, 30_000);
 
+  it('puts the correlation id of the request line on the events, with or without the header', async () => {
+    const created = await post('/wallets', { playerId: `${PLAYER}-corr`, initialBalance: { currency: 'BRL', amount: '500.00' } });
+    const wallet = (await created.json()) as { id: string };
+    // Without a header the id is generated: the log line and the event must still share it.
+    const generated = await post('/wagering/transactions', wager(wallet.id, 'tx-corr-1', `${PLAYER}-corr`), { 'idempotency-key': 'key-corr-1' });
+    const { transactionId } = (await generated.json()) as { transactionId: string };
+    await post('/wagering/transactions', wager(wallet.id, 'tx-corr-2', `${PLAYER}-corr`), {
+      'idempotency-key': 'key-corr-2',
+      'x-correlation-id': 'corr-given-2',
+    });
+
+    const eventCorrelation = async (id: string) =>
+      (await orm.em.getConnection().execute<{ correlation_id: string }[]>(
+        `select payload->>'correlationId' as correlation_id from outbox_messages
+          where event_type = 'WagerTransactionProcessed' and payload->'data'->>'transactionId' = ?`,
+        [id],
+      ))[0]!.correlation_id;
+
+    await Bun.sleep(200); // the child's stdout is read asynchronously
+    const line = lines().find((entry) => entry.transactionId === transactionId)!;
+    expect(typeof line.correlationId).toBe('string');
+    expect(await eventCorrelation(transactionId)).toBe(line.correlationId as string);
+
+    const given = lines().find((entry) => entry.correlationId === 'corr-given-2')!;
+    expect(await eventCorrelation(given.transactionId as string)).toBe('corr-given-2');
+  }, 30_000);
+
   it('logs a processed queue message with its message id', async () => {
     const created = await post('/wallets', { playerId: `${PLAYER}-sqs`, initialBalance: { currency: 'BRL', amount: '500.00' } });
     const wallet = (await created.json()) as { id: string };

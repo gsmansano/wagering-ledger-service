@@ -1,11 +1,11 @@
-import { Body, Controller, Get, HttpCode, Logger, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Logger, Param, Post, Query, Req } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { GetLedger } from '../../application/query/get-ledger';
 import { GetWallet } from '../../application/query/get-wallet';
 import { CreateWallet } from '../../application/wallet/create-wallet';
 import { ReconcileWallet } from '../../application/wallet/reconcile-wallet';
 import { decodeLedgerCursor, encodeLedgerCursor, parseLedgerLimit } from './ledger-cursor';
-import { asObject, asUuid, optionalString, requiredString } from './request-parsing';
+import { asObject, asUuid, optionalString, requestCorrelationId, requiredString } from './request-parsing';
 import { toLedgerEntryView, toWalletView } from './transaction-view';
 
 @Controller('wallets')
@@ -23,13 +23,14 @@ export class WalletsController {
   // `initialBalance.amount` is optional: without it (or with "0.00") the wallet opens empty (decision #27).
   @Post()
   @HttpCode(201)
-  async create(@Body() body: unknown) {
+  async create(@Body() body: unknown, @Req() req: { id?: unknown }) {
     const request = asObject(body, 'body');
     const initialBalance = asObject(request.initialBalance, 'initialBalance');
     const wallet = await this.createWallet.execute({
       playerId: requiredString(request, 'playerId'),
       currency: requiredString(initialBalance, 'currency'),
       initialAmount: optionalString(initialBalance, 'amount'),
+      correlationId: requestCorrelationId(req),
     });
     this.requestLog.assign({ walletId: wallet.id, event: 'wallet_created' });
     return toWalletView(wallet);
