@@ -29,6 +29,7 @@ bun test
 | `bun run poc:reversals` | Curl walkthrough of M5: a REFUND before its BET is parked, the worker applies it after the BET arrives, a second reversal is refused, an orphan reversal is rejected (needs the app running with short retry timings, see below) |
 | `bun run poc:consumer` | AWS CLI walkthrough of M7: send queue messages for a BET (applied once), a duplicate (no effect) and two invalid messages (they land in the DLQ with the reason); runs `amazon/aws-cli` in Docker when `aws` is not installed (needs the app running) |
 | `bun run poc:outbox` | Walkthrough of M8: an instance commits and dies before publishing and another publishes the events, a repeated send leaves one copy in the queue, a parked event holds back its own wallet until it is requeued; starts its own app instances on ports 3021 and 3022, so the Compose `app` must be stopped (needs `postgres`, `ministack` and `migrate` running) |
+| `bun run poc:multi` | Walkthrough of M9: three instances share four wallets under a mixed load, one is killed with SIGKILL mid-load, and the script prints the stored balance next to the ledger sum of every wallet; starts its own app instances on ports 3031 to 3033, so the Compose `app` must be stopped (needs `postgres`, `ministack` and `migrate` running) |
 | `bun run poc:schema` | Try to break each database constraint and show PostgreSQL refusing it (needs `docker compose up`; leaves no data) |
 | `bun run typecheck` | Type-check with `tsc --noEmit` |
 | `bun run migration:up` | Apply pending migrations |
@@ -143,6 +144,18 @@ update outbox_messages set failed_at = null, attempts = 0, next_attempt_at = nul
 
 `OUTBOX_WORKER=off` disables the publisher in one instance; the other `OUTBOX_*` variables are in `.env.example`.
 `bun run poc:outbox` shows a crash before publishing, a repeated send and a parked event.
+
+## Several instances
+
+Any number of instances can run against the same database and queues; nothing is shared in memory. A wallet's lock
+serializes its writers, `ON CONFLICT` makes duplicates replays, and every worker claims rows with `SKIP LOCKED`.
+
+- `bun run poc:multi` runs three instances, applies a mixed load, kills one with SIGKILL and prints `balance == ledger` per wallet.
+- `test/integration/multi-instance.test.ts` and `multi-instance-restart.test.ts` start separate processes, apply a seeded
+  HTTP and SQS load (`LOAD_SEED=<n>` replays one), kill one or all of them mid-load and check, by SQL, that balances equal
+  their ledgers, ledgers and event chains have no gaps, nothing is pending and the DLQ is empty.
+- `test/integration/hot-wallet.test.ts` measures what a burst on one wallet costs other wallets (decision #62 in `PLAN.md`).
+  A request waiting for a wallet lock holds a database connection, so size the pool with `DATABASE_POOL_MAX` (default 10).
 
 ## Project layout
 

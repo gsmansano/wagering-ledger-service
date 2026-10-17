@@ -141,14 +141,14 @@ Section references (§) point to the original requirements document.
 - [x] Tests: concurrent publishers, crash between commit and publish
 - [x] PoC: Script that shows outbox rows being published and what happens after a crash
 
-## M9 — Multi-instance and recovery — §8, §13 _(current)_
+## M9 — Multi-instance and recovery — §8, §13
 
 - [x] Three or more instances under mixed load on shared wallets
 - [x] Restart mid-load with verified convergence; `balance == ledger` checked for every wallet
 - [x] Hot-wallet experiment: more distinct requests on one wallet than the connection pool holds; measure how long requests for other wallets wait, and record the result as a documented limit (#62)
-- [ ] PoC: Script that starts several instances, applies mixed load, kills one and prints the `balance == ledger` check
+- [x] PoC: `bun run poc:multi` starts several instances, applies mixed load, kills one and prints the `balance == ledger` check
 
-## M10 — Observability — §12
+## M10 — Observability — §12 _(current)_
 
 - [ ] Structured JSON logs with correlation fields and no sensitive payloads
 - [ ] Metrics: status counts, duplicates, retries, DLQ, lock conflicts, outbox lag, latency, reconciliation divergences (§9 asks for them to be counted)
