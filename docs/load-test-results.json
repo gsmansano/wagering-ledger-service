@@ -1,0 +1,624 @@
+{
+  "environment": {
+    "date": "2026-10-17T17:04:57.687Z",
+    "machine": {
+      "cpu": "AMD Ryzen 5 PRO 3500U w/ Radeon Vega Mobile Gfx",
+      "cores": 4,
+      "memoryMiB": 9947,
+      "os": "Linux 6.6.87.2-microsoft-standard-WSL2"
+    },
+    "bun": "1.4.3",
+    "postgres": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+    "note": "Load generator, application instances, PostgreSQL and the SQS emulator share one machine.",
+    "instances": 3,
+    "databasePoolMax": 10,
+    "walletLockTimeoutMs": 5000,
+    "logLevel": "info"
+  },
+  "config": {
+    "durationS": 15,
+    "warmupS": 2,
+    "concurrency": [
+      8,
+      32,
+      128
+    ],
+    "scenarios": [
+      "spread",
+      "skewed",
+      "hot"
+    ],
+    "instances": 3,
+    "wallets": 200,
+    "seed": 1,
+    "duplicateRate": 0.05,
+    "out": "docs/load-test-results.json"
+  },
+  "runs": [
+    {
+      "scenario": "spread",
+      "concurrency": 8,
+      "seconds": 15.1,
+      "requests": 951,
+      "requestsPerSecond": 63,
+      "servedPerSecond": 63,
+      "statuses": {
+        "200": 951
+      },
+      "errorRate": 0,
+      "shedRate": 0,
+      "latencyMs": {
+        "all": {
+          "n": 951,
+          "p50": 117.5,
+          "p95": 220.7,
+          "p99": 275.2,
+          "max": 360.2
+        },
+        "served": {
+          "n": 951,
+          "p50": 117.5,
+          "p95": 220.7,
+          "p99": 275.2,
+          "max": 360.2
+        },
+        "hotWallets": null,
+        "otherWallets": null
+      },
+      "serverProcessingSecondsUpperBound": {
+        "p50": 0.25,
+        "p99": 0.5
+      },
+      "lockWait": {
+        "waits": 951,
+        "meanMs": 29.5,
+        "p95UpperBoundSeconds": 0.1,
+        "p99UpperBoundSeconds": 0.1,
+        "over100ms": 7,
+        "share": 0.74,
+        "timeouts": 0
+      },
+      "outbox": {
+        "lagMaxSeconds": 9.705585,
+        "lagP95Seconds": 9.705585,
+        "pendingMax": 1179,
+        "drainMsAfterLoad": 11560
+      },
+      "duplicates": {
+        "sent": 50,
+        "differentTransactionIds": 0
+      },
+      "invariants": {
+        "ok": true
+      }
+    },
+    {
+      "scenario": "spread",
+      "concurrency": 32,
+      "seconds": 15.3,
+      "requests": 1529,
+      "requestsPerSecond": 100,
+      "servedPerSecond": 100,
+      "statuses": {
+        "200": 1529
+      },
+      "errorRate": 0,
+      "shedRate": 0,
+      "latencyMs": {
+        "all": {
+          "n": 1529,
+          "p50": 288.2,
+          "p95": 560.1,
+          "p99": 692.1,
+          "max": 894.9
+        },
+        "served": {
+          "n": 1529,
+          "p50": 288.2,
+          "p95": 560.1,
+          "p99": 692.1,
+          "max": 894.9
+        },
+        "hotWallets": null,
+        "otherWallets": null
+      },
+      "serverProcessingSecondsUpperBound": {
+        "p50": 0.5,
+        "p99": 1
+      },
+      "lockWait": {
+        "waits": 1529,
+        "meanMs": 65,
+        "p95UpperBoundSeconds": 0.25,
+        "p99UpperBoundSeconds": 0.25,
+        "over100ms": 178,
+        "share": 11.64,
+        "timeouts": 0
+      },
+      "outbox": {
+        "lagMaxSeconds": 15.331795,
+        "lagP95Seconds": 15.331795,
+        "pendingMax": 2737,
+        "drainMsAfterLoad": 32577
+      },
+      "duplicates": {
+        "sent": 86,
+        "differentTransactionIds": 0
+      },
+      "invariants": {
+        "ok": true
+      }
+    },
+    {
+      "scenario": "spread",
+      "concurrency": 128,
+      "seconds": 16.2,
+      "requests": 1764,
+      "requestsPerSecond": 109,
+      "servedPerSecond": 109,
+      "statuses": {
+        "200": 1764
+      },
+      "errorRate": 0,
+      "shedRate": 0,
+      "latencyMs": {
+        "all": {
+          "n": 1764,
+          "p50": 1120.7,
+          "p95": 1637.8,
+          "p99": 2013.4,
+          "max": 2234.5
+        },
+        "served": {
+          "n": 1764,
+          "p50": 1120.7,
+          "p95": 1637.8,
+          "p99": 2013.4,
+          "max": 2234.5
+        },
+        "hotWallets": null,
+        "otherWallets": null
+      },
+      "serverProcessingSecondsUpperBound": {
+        "p50": 2.5,
+        "p99": 2.5
+      },
+      "lockWait": {
+        "waits": 1764,
+        "meanMs": 74.6,
+        "p95UpperBoundSeconds": 0.25,
+        "p99UpperBoundSeconds": 0.5,
+        "over100ms": 330,
+        "share": 18.71,
+        "timeouts": 0
+      },
+      "outbox": {
+        "lagMaxSeconds": 17.442261,
+        "lagP95Seconds": 17.442261,
+        "pendingMax": 3608,
+        "drainMsAfterLoad": 54429
+      },
+      "duplicates": {
+        "sent": 83,
+        "differentTransactionIds": 0
+      },
+      "invariants": {
+        "ok": true
+      }
+    },
+    {
+      "scenario": "skewed",
+      "concurrency": 8,
+      "seconds": 15.4,
+      "requests": 746,
+      "requestsPerSecond": 48,
+      "servedPerSecond": 48,
+      "statuses": {
+        "200": 746
+      },
+      "errorRate": 0,
+      "shedRate": 0,
+      "latencyMs": {
+        "all": {
+          "n": 746,
+          "p50": 136.1,
+          "p95": 362.5,
+          "p99": 544.5,
+          "max": 709.3
+        },
+        "served": {
+          "n": 746,
+          "p50": 136.1,
+          "p95": 362.5,
+          "p99": 544.5,
+          "max": 709.3
+        },
+        "hotWallets": {
+          "n": 603,
+          "p50": 141.5,
+          "p95": 387.8,
+          "p99": 569.3,
+          "max": 709.3
+        },
+        "otherWallets": {
+          "n": 143,
+          "p50": 123.2,
+          "p95": 318.4,
+          "p99": 403.8,
+          "max": 417.3
+        }
+      },
+      "serverProcessingSecondsUpperBound": {
+        "p50": 0.25,
+        "p99": 1
+      },
+      "lockWait": {
+        "waits": 746,
+        "meanMs": 59.9,
+        "p95UpperBoundSeconds": 0.25,
+        "p99UpperBoundSeconds": 0.5,
+        "over100ms": 121,
+        "share": 16.22,
+        "timeouts": 0
+      },
+      "outbox": {
+        "lagMaxSeconds": 10.884418,
+        "lagP95Seconds": 10.884418,
+        "pendingMax": 1044,
+        "drainMsAfterLoad": 16926
+      },
+      "duplicates": {
+        "sent": 37,
+        "differentTransactionIds": 0
+      },
+      "invariants": {
+        "ok": true
+      }
+    },
+    {
+      "scenario": "skewed",
+      "concurrency": 32,
+      "seconds": 15.6,
+      "requests": 1137,
+      "requestsPerSecond": 73,
+      "servedPerSecond": 73,
+      "statuses": {
+        "200": 1137
+      },
+      "errorRate": 0,
+      "shedRate": 0,
+      "latencyMs": {
+        "all": {
+          "n": 1137,
+          "p50": 304.7,
+          "p95": 1241.1,
+          "p99": 2326.3,
+          "max": 4247.1
+        },
+        "served": {
+          "n": 1137,
+          "p50": 304.7,
+          "p95": 1241.1,
+          "p99": 2326.3,
+          "max": 4247.1
+        },
+        "hotWallets": {
+          "n": 903,
+          "p50": 352.3,
+          "p95": 1349,
+          "p99": 2396.8,
+          "max": 4247.1
+        },
+        "otherWallets": {
+          "n": 234,
+          "p50": 197.7,
+          "p95": 422.8,
+          "p99": 496.8,
+          "max": 552.1
+        }
+      },
+      "serverProcessingSecondsUpperBound": {
+        "p50": 0.5,
+        "p99": 2.5
+      },
+      "lockWait": {
+        "waits": 1137,
+        "meanMs": 242.4,
+        "p95UpperBoundSeconds": 2.5,
+        "p99UpperBoundSeconds": 2.5,
+        "over100ms": 553,
+        "share": 48.64,
+        "timeouts": 0
+      },
+      "outbox": {
+        "lagMaxSeconds": 14.418585,
+        "lagP95Seconds": 14.418585,
+        "pendingMax": 1992,
+        "drainMsAfterLoad": 44772
+      },
+      "duplicates": {
+        "sent": 61,
+        "differentTransactionIds": 0
+      },
+      "invariants": {
+        "ok": true
+      }
+    },
+    {
+      "scenario": "skewed",
+      "concurrency": 128,
+      "seconds": 17.6,
+      "requests": 1379,
+      "requestsPerSecond": 78,
+      "servedPerSecond": 78,
+      "statuses": {
+        "200": 1379
+      },
+      "errorRate": 0,
+      "shedRate": 0,
+      "latencyMs": {
+        "all": {
+          "n": 1379,
+          "p50": 1424.5,
+          "p95": 2913.9,
+          "p99": 3836,
+          "max": 7531.2
+        },
+        "served": {
+          "n": 1379,
+          "p50": 1424.5,
+          "p95": 2913.9,
+          "p99": 3836,
+          "max": 7531.2
+        },
+        "hotWallets": {
+          "n": 1094,
+          "p50": 1464.4,
+          "p95": 3012.1,
+          "p99": 4149.6,
+          "max": 7531.2
+        },
+        "otherWallets": {
+          "n": 285,
+          "p50": 1199.8,
+          "p95": 2616.8,
+          "p99": 2798.8,
+          "max": 2914.2
+        }
+      },
+      "serverProcessingSecondsUpperBound": {
+        "p50": 2.5,
+        "p99": 5
+      },
+      "lockWait": {
+        "waits": 1379,
+        "meanMs": 266.1,
+        "p95UpperBoundSeconds": 2.5,
+        "p99UpperBoundSeconds": 2.5,
+        "over100ms": 732,
+        "share": 53.08,
+        "timeouts": 0
+      },
+      "outbox": {
+        "lagMaxSeconds": 20.016237,
+        "lagP95Seconds": 20.016237,
+        "pendingMax": 2941,
+        "drainMsAfterLoad": 54859
+      },
+      "duplicates": {
+        "sent": 76,
+        "differentTransactionIds": 0
+      },
+      "invariants": {
+        "ok": true
+      }
+    },
+    {
+      "scenario": "hot",
+      "concurrency": 8,
+      "seconds": 15.2,
+      "requests": 629,
+      "requestsPerSecond": 41,
+      "servedPerSecond": 41,
+      "statuses": {
+        "200": 629
+      },
+      "errorRate": 0,
+      "shedRate": 0,
+      "latencyMs": {
+        "all": {
+          "n": 629,
+          "p50": 124.6,
+          "p95": 580.5,
+          "p99": 891.9,
+          "max": 1639.7
+        },
+        "served": {
+          "n": 629,
+          "p50": 124.6,
+          "p95": 580.5,
+          "p99": 891.9,
+          "max": 1639.7
+        },
+        "hotWallets": {
+          "n": 563,
+          "p50": 143.5,
+          "p95": 592.7,
+          "p99": 896.8,
+          "max": 1639.7
+        },
+        "otherWallets": {
+          "n": 66,
+          "p50": 42.9,
+          "p95": 76.6,
+          "p99": 93,
+          "max": 93
+        }
+      },
+      "serverProcessingSecondsUpperBound": {
+        "p50": 0.25,
+        "p99": 1
+      },
+      "lockWait": {
+        "waits": 629,
+        "meanMs": 157.2,
+        "p95UpperBoundSeconds": 1,
+        "p99UpperBoundSeconds": 1,
+        "over100ms": 294,
+        "share": 46.74,
+        "timeouts": 0
+      },
+      "outbox": {
+        "lagMaxSeconds": 10.748193,
+        "lagP95Seconds": 10.748193,
+        "pendingMax": 746,
+        "drainMsAfterLoad": 31076
+      },
+      "duplicates": {
+        "sent": 33,
+        "differentTransactionIds": 0
+      },
+      "invariants": {
+        "ok": true
+      }
+    },
+    {
+      "scenario": "hot",
+      "concurrency": 32,
+      "seconds": 16,
+      "requests": 606,
+      "requestsPerSecond": 38,
+      "servedPerSecond": 38,
+      "statuses": {
+        "200": 606
+      },
+      "errorRate": 0,
+      "shedRate": 0,
+      "latencyMs": {
+        "all": {
+          "n": 606,
+          "p50": 566.2,
+          "p95": 2344.9,
+          "p99": 3736.1,
+          "max": 5332.2
+        },
+        "served": {
+          "n": 606,
+          "p50": 566.2,
+          "p95": 2344.9,
+          "p99": 3736.1,
+          "max": 5332.2
+        },
+        "hotWallets": {
+          "n": 548,
+          "p50": 670.7,
+          "p95": 2453.9,
+          "p99": 3867.3,
+          "max": 5332.2
+        },
+        "otherWallets": {
+          "n": 58,
+          "p50": 140.1,
+          "p95": 460.1,
+          "p99": 732.9,
+          "max": 732.9
+        }
+      },
+      "serverProcessingSecondsUpperBound": {
+        "p50": 1,
+        "p99": 5
+      },
+      "lockWait": {
+        "waits": 606,
+        "meanMs": 615.9,
+        "p95UpperBoundSeconds": 2.5,
+        "p99UpperBoundSeconds": 5,
+        "over100ms": 410,
+        "share": 67.66,
+        "timeouts": 0
+      },
+      "outbox": {
+        "lagMaxSeconds": 12.185667,
+        "lagP95Seconds": 12.185667,
+        "pendingMax": 765,
+        "drainMsAfterLoad": 23242
+      },
+      "duplicates": {
+        "sent": 28,
+        "differentTransactionIds": 0
+      },
+      "invariants": {
+        "ok": true
+      }
+    },
+    {
+      "scenario": "hot",
+      "concurrency": 128,
+      "seconds": 18.4,
+      "requests": 852,
+      "requestsPerSecond": 46,
+      "servedPerSecond": 46,
+      "statuses": {
+        "200": 852
+      },
+      "errorRate": 0,
+      "shedRate": 0,
+      "latencyMs": {
+        "all": {
+          "n": 852,
+          "p50": 2565,
+          "p95": 4563.4,
+          "p99": 6259.8,
+          "max": 8116.3
+        },
+        "served": {
+          "n": 852,
+          "p50": 2565,
+          "p95": 4563.4,
+          "p99": 6259.8,
+          "max": 8116.3
+        },
+        "hotWallets": {
+          "n": 753,
+          "p50": 2643.1,
+          "p95": 4640.6,
+          "p99": 6402.9,
+          "max": 8116.3
+        },
+        "otherWallets": {
+          "n": 99,
+          "p50": 2289.8,
+          "p95": 3446.3,
+          "p99": 3490.5,
+          "max": 3490.5
+        }
+      },
+      "serverProcessingSecondsUpperBound": {
+        "p50": 5,
+        "p99": 10
+      },
+      "lockWait": {
+        "waits": 852,
+        "meanMs": 545.3,
+        "p95UpperBoundSeconds": 2.5,
+        "p99UpperBoundSeconds": 5,
+        "over100ms": 473,
+        "share": 55.52,
+        "timeouts": 0
+      },
+      "outbox": {
+        "lagMaxSeconds": 20.012387,
+        "lagP95Seconds": 20.012387,
+        "pendingMax": 1722,
+        "drainMsAfterLoad": null
+      },
+      "duplicates": {
+        "sent": 46,
+        "differentTransactionIds": 0
+      },
+      "invariants": {
+        "ok": true
+      }
+    }
+  ]
+}

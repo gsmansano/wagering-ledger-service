@@ -174,9 +174,9 @@ Section references (§) point to the original requirements document.
 
 ## M12 — Optional extras
 
-- [ ] Load test (`bun run test:load`) with methodology and results
-- [ ] External identity provider (Keycloak / Zitadel)
-- [ ] Double-entry ledger
+- [x] Load test (`bun run test:load`) with methodology and results (`docs/LOAD_TEST.md`)
+- [ ] External identity provider (Keycloak / Zitadel) — not built, by choice (2026-10-17): authentication earns no points (§2) and the design is documented in `ARCHITECTURE.md` §9
+- [ ] Double-entry ledger — not built, by choice (2026-10-17): it would rewrite the ledger proven in M3–M11
 
 ---
 

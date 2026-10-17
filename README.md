@@ -33,10 +33,13 @@ Design decisions, trade-offs and known limitations are in [`ARCHITECTURE.md`](AR
 | `bun run poc:outbox` | Walkthrough of M8: an instance commits and dies before publishing and another publishes the events, a repeated send leaves one copy in the queue, a parked event holds back its own wallet until it is requeued; starts its own app instances on ports 3021 and 3022, so the Compose `app` must be stopped (needs `postgres`, `ministack` and `migrate` running) |
 | `bun run poc:observability` | Walkthrough of M10: starts an instance and shows the JSON logs, the metrics and a request shed by the wallet-lock timeout (needs `postgres`, `ministack` and `migrate` running; stop the Compose `app`) |
 | `bun run poc:multi` | Walkthrough of M9: three instances share four wallets under a mixed load, one is killed with SIGKILL mid-load, and the script prints the stored balance next to the ledger sum of every wallet; starts its own app instances on ports 3031 to 3033, so the Compose `app` must be stopped (needs `postgres`, `ministack` and `migrate` running) |
+| `bun run test:load` | Closed-loop HTTP load against three real instances in three scenarios (spread over wallets, skewed, one hot wallet) at several concurrency levels; prints throughput, p50/p95/p99, 503 and error rates, wallet-lock waits and outbox lag per run, checks `balance == ledger` afterwards and writes `docs/load-test-results.json`. Uses the test database; tune with `LOAD_DURATION_S`, `LOAD_CONCURRENCY`, `LOAD_SCENARIOS`, `LOAD_INSTANCES`, `LOAD_WALLETS`, `LOAD_SEED`, `LOAD_OUT` (needs `postgres` and `ministack` running; stop the Compose `app`) |
 | `bun run poc:schema` | Try to break each database constraint and show PostgreSQL refusing it (needs `docker compose up`; leaves no data) |
 | `bun run typecheck` | Type-check with `tsc --noEmit` |
 | `bun run migration:up` | Apply pending migrations |
 | `bun run migration:down` | Revert the most recent migration |
+
+The load test method, results and analysis are in [`docs/LOAD_TEST.md`](docs/LOAD_TEST.md).
 
 Configuration is read from environment variables; see `.env.example`. The SQS emulator accepts any credentials, so the app falls back to placeholder ones (`test`/`test`) when `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are not set; they are never used against real AWS.
 
