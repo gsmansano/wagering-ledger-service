@@ -89,11 +89,13 @@ outbox "$W1"
 kill -9 "$A"; wait "$A" 2>/dev/null || true
 echo "Instance A is dead. Events in the queue so far: $before (this run added none)"
 echo
+# Events other runs left unpublished (poc:observability runs with the publisher off) are published by B as well.
+others="$(sql "select count(*) from outbox_messages where aggregate_id <> '$W1' and published_at is null and failed_at is null")"
 echo "Instance B (publisher on) starts and finds the work in the table"
 start_instance 3022 on; B=$PID
 wait_published "$W1"
 outbox "$W1"
-echo "Events added to the queue: $(( $(queue_count) - before )) (expect 6)"
+echo "Events added to the queue: $(( $(queue_count) - before )) (expect $(( 6 + others )): the 6 above, plus $others left unpublished by earlier runs)"
 
 echo
 echo "### Part 2: sent but not marked published (the process died between the send and the commit)"
