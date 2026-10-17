@@ -73,6 +73,8 @@ Section references (§) point to the original requirements document.
 | 60  | A wallet's outbox rows are ordered by `outbox_messages.sequence`, a global `bigint generated always as identity` assigned by the database at insert. It is a persistence concern: the domain `OutboxMessage` does not carry it. Inserts for one wallet run under the wallet lock, so its sequence follows the order its changes were applied in; across wallets it is only a unique number. The claim query orders by it and applies #58 and #59 with a `NOT EXISTS` over earlier unpublished rows of the same `aggregate_id`. | `occurred_at` is stamped by the application, can tie within a millisecond and may differ from lock order (the problem of #34). An identity needs no extra query on the write paths, unlike a per-wallet `max + 1`; the cost is that the guarantee rests on the wallet lock rather than on a constraint, so a test pins it (20 concurrent requests: outbox order equals ledger order). Existing rows are numbered by `(occurred_at, id)` in the migration. | M8 |
 | 61  | A parked event is requeued by `OutboxMessage.requeue()` (clears `failedAt`, resets `attempts`, due now) followed by `OutboxRepository.update`. There is no HTTP endpoint; the README documents the operator's SQL. An admin endpoint waits for real authentication (M12). | #58 makes a parked event hold its wallet, so an operator must have a way out. An endpoint would need an authorization design that the no-op guard (#49) cannot provide. | M8 |
 
+| 62  | The connection pool size is explicit and configurable: `DATABASE_POOL_MAX`, default 10 (the driver's own default, now stated). Measured limit of a hot wallet (one instance, warmed pool, WSL2 laptop, `hot-wallet.test.ts`): one wallet applies about 40 to 70 requests per second whatever the pool size, because its requests run one after another under the wallet lock. A request waiting for that lock holds a connection, so a burst larger than the pool makes requests for other wallets wait in the pool queue for roughly the time the hot wallet needs to drain its waiters: pool 10 with a burst of 100 and 200 gave a wait of about 2.6 s and 4.2 s for other wallets (baseline about 50 ms), pool 50 with a burst of 100 gave a worst case of 1.1 s and p95 of 255 ms, and with a burst of 200 a worst case of 3.5 s. A burst smaller than the pool costs other wallets well under 1 s. Requests were all settled and the ledger consistent in every run; none failed. Mitigations, not built: a larger pool, spreading the load (SQS groups per wallet, more instances), and in M10 a `lock_timeout` that turns a long wait into a retryable `503`. To be written in `ARCHITECTURE.md` (limitations). | The wallet is the unit of concurrency (#25), so serializing one wallet is intended; the cost is that the wait is spent holding a connection. Measuring it turns an assumption into a documented limit. The numbers vary with the machine, so they are an order of magnitude, not a promise. | M9 |
+
 ---
 
 ## M0 — Preflight
@@ -141,9 +143,9 @@ Section references (§) point to the original requirements document.
 
 ## M9 — Multi-instance and recovery — §8, §13 _(current)_
 
-- [ ] Three or more instances under mixed load on shared wallets
-- [ ] Restart mid-load with verified convergence; `balance == ledger` checked for every wallet
-- [ ] Hot-wallet experiment: more distinct requests on one wallet than the connection pool holds; measure how long requests for other wallets wait, and record the result as a documented limit
+- [x] Three or more instances under mixed load on shared wallets
+- [x] Restart mid-load with verified convergence; `balance == ledger` checked for every wallet
+- [x] Hot-wallet experiment: more distinct requests on one wallet than the connection pool holds; measure how long requests for other wallets wait, and record the result as a documented limit (#62)
 - [ ] PoC: Script that starts several instances, applies mixed load, kills one and prints the `balance == ledger` check
 
 ## M10 — Observability — §12

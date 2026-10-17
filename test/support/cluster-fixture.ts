@@ -17,7 +17,7 @@ export interface ClusterFixture {
  * A cluster that owns its queues (a per-run prefix), so a running development stack cannot take its messages, with
  * every worker on and short intervals so retries and publication show up within a test's time.
  */
-export async function startClusterFixture(instances: number): Promise<ClusterFixture> {
+export async function startClusterFixture(instances: number, overrides: Record<string, string> = {}): Promise<ClusterFixture> {
   const prefix = `mi${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}-`;
   const { sqs: sqsConfig } = loadConfig();
   const sqs = new SQSClient({
@@ -41,6 +41,7 @@ export async function startClusterFixture(instances: number): Promise<ClusterFix
       SQS_WAIT_TIME_SECONDS: '1',
       SQS_RETRY_BASE_MS: '200',
       SQS_SHUTDOWN_TIMEOUT_MS: '3000',
+      ...overrides,
     },
   });
   return {

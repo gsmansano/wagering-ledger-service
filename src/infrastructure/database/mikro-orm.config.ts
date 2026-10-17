@@ -7,9 +7,10 @@ import { OutboxMessageSchema } from './rows/outbox-message.row';
 import { WagerTransactionSchema } from './rows/wager-transaction.row';
 import { WalletSchema } from './rows/wallet.row';
 
-export function createOrmConfig(databaseUrl: string) {
+export function createOrmConfig(databaseUrl: string, poolMax?: number) {
   return defineConfig({
     clientUrl: databaseUrl,
+    ...(poolMax !== undefined && { pool: { max: poolMax } }),
     // Persistence rows only; the domain classes are never registered with the ORM.
     entities: [
       WalletSchema,

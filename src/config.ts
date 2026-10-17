@@ -1,6 +1,8 @@
 export interface AppConfig {
   port: number;
   databaseUrl: string;
+  /** Connections one instance may hold. A request waiting for the wallet lock holds one for the whole wait. */
+  databasePoolMax: number;
   sqs: {
     endpoint: string;
     region: string;
@@ -43,6 +45,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   return {
     port: Number(env.PORT ?? 3000),
     databaseUrl: env.DATABASE_URL ?? 'postgres://wagering:wagering@localhost:5432/wagering',
+    databasePoolMax: Number(env.DATABASE_POOL_MAX ?? 10),
     sqs: {
       endpoint: env.SQS_ENDPOINT ?? 'http://localhost:4566',
       region: env.AWS_REGION ?? 'us-east-1',

@@ -38,7 +38,10 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
   imports: [
     // forRootAsync reads config at module init, so tests can set env vars before booting the app.
     MikroOrmModule.forRootAsync({
-      useFactory: () => createOrmConfig(loadConfig().databaseUrl),
+      useFactory: () => {
+        const { databaseUrl, databasePoolMax } = loadConfig();
+        return createOrmConfig(databaseUrl, databasePoolMax);
+      },
       // Lets Nest inject the PostgreSQL-specific EntityManager.
       driver: PostgreSqlDriver,
     }),
