@@ -73,8 +73,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       maxReceiveCount: numberFrom(env, 'SQS_MAX_RECEIVE_COUNT', 5),
       consumer: {
         enabled: (env.SQS_CONSUMER ?? 'on') !== 'off',
-        batchSize: numberFrom(env, 'SQS_CONSUMER_BATCH_SIZE', 10),
-        pollers: numberFrom(env, 'SQS_CONSUMER_CONCURRENCY', 1),
+        // One message per receive (decision #67): a batch can hold later messages of a wallet, and handing them back
+        // after an earlier one fails still spends their receives, so they could reach the DLQ without being processed.
+        batchSize: numberFrom(env, 'SQS_CONSUMER_BATCH_SIZE', 1),
+        pollers: numberFrom(env, 'SQS_CONSUMER_CONCURRENCY', 10),
         waitTimeSeconds: numberFrom(env, 'SQS_WAIT_TIME_SECONDS', 20),
         retryBaseMs: numberFrom(env, 'SQS_RETRY_BASE_MS', 1_000),
         retryCapMs: numberFrom(env, 'SQS_RETRY_CAP_MS', 300_000),

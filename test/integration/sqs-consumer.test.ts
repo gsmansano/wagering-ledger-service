@@ -61,6 +61,8 @@ describe('SqsConsumer (real PostgreSQL and MiniStack)', () => {
   let metrics: CountingMetrics;
   let consumer: SqsConsumer;
   let newConsumer: () => SqsConsumer;
+  let handler: MessageHandler;
+  let consumerOptions: ConstructorParameters<typeof SqsConsumer>[2];
   let walletId: string;
   let queueUrl: string;
   let dlqUrl: string;
@@ -168,23 +170,23 @@ describe('SqsConsumer (real PostgreSQL and MiniStack)', () => {
       new ProcessWagerTransaction({ unitOfWork: flaky, now: () => new Date(), newId: () => crypto.randomUUID() }),
       { baseMs: 100, capMs: 1_000 },
     );
-    const handler: MessageHandler = {
+    handler = {
       handle: async (body, receiveCount) => {
         await gate.open;
         return real.handle(body, receiveCount);
       },
     };
     metrics = new CountingMetrics();
-    newConsumer = () =>
-      new SqsConsumer(faulty, handler, {
-        enabled: false,
-        queueName: `consumer-test-${suffix}.fifo`,
-        dlqName: `consumer-test-dlq-${suffix}.fifo`,
-        batchSize: 10,
-        pollers: 1,
-        waitTimeSeconds: 1,
-        shutdownTimeoutMs: 500,
-      }, metrics);
+    consumerOptions = {
+      enabled: false,
+      queueName: `consumer-test-${suffix}.fifo`,
+      dlqName: `consumer-test-dlq-${suffix}.fifo`,
+      batchSize: 10,
+      pollers: 1,
+      waitTimeSeconds: 1,
+      shutdownTimeoutMs: 500,
+    };
+    newConsumer = () => new SqsConsumer(faulty, handler, consumerOptions, metrics);
     consumer = newConsumer();
   });
 
@@ -357,6 +359,20 @@ describe('SqsConsumer (real PostgreSQL and MiniStack)', () => {
       await assertLedgerMatchesBalance(orm, walletId);
     });
   });
+
+  it('with the default batch size, a message behind a failing one keeps its receives and is not dead-lettered unprocessed (decision #67)', async () => {
+    const { batchSize } = loadConfig().sqs.consumer;
+    consumer = new SqsConsumer(faulty, handler, { ...consumerOptions, batchSize }, metrics);
+    flaky.failures = MAX_RECEIVE_COUNT; // msg-1 fails on every receive the queue allows, then goes to the DLQ
+    await send(messageBody('msg-1', 'ext-1', '10.00'));
+    await send(messageBody('msg-2', 'ext-2', '10.00'));
+
+    await pollUntil(async () => (await statusOf('ext-2')) !== undefined, 20_000);
+
+    expect(await statusOf('ext-1')).toBeUndefined();
+    expect(await statusOf('ext-2')).toBe('PROCESSED');
+    expect(await balanceOf()).toBe('90.00');
+  }, 30_000);
 
   it('keeps consuming in the background until stopped, and stop() returns promptly', async () => {
     consumer.start();
