@@ -18,6 +18,7 @@ import { dlqAttributes, mainQueueAttributes } from '../../src/infrastructure/mes
 import { MikroOrmUnitOfWork } from '../../src/infrastructure/database/repositories/mikro-orm-unit-of-work';
 import { SqsConsumer, type MessageHandler } from '../../src/interfaces/sqs/sqs-consumer';
 import { WagerMessageHandler } from '../../src/interfaces/sqs/wager-message.handler';
+import { CountingMetrics } from '../support/counting-metrics';
 import { initTestOrm, truncateAll } from '../support/database';
 import { assertLedgerMatchesBalance } from '../support/ledger';
 
@@ -57,6 +58,7 @@ describe('SqsConsumer (real PostgreSQL and MiniStack)', () => {
 
   let orm: MikroORM;
   let flaky: FlakyUnitOfWork;
+  let metrics: CountingMetrics;
   let consumer: SqsConsumer;
   let newConsumer: () => SqsConsumer;
   let walletId: string;
@@ -172,6 +174,7 @@ describe('SqsConsumer (real PostgreSQL and MiniStack)', () => {
         return real.handle(body, receiveCount);
       },
     };
+    metrics = new CountingMetrics();
     newConsumer = () =>
       new SqsConsumer(faulty, handler, {
         enabled: false,
@@ -181,7 +184,7 @@ describe('SqsConsumer (real PostgreSQL and MiniStack)', () => {
         pollers: 1,
         waitTimeSeconds: 1,
         shutdownTimeoutMs: 500,
-      });
+      }, metrics);
     consumer = newConsumer();
   });
 
@@ -254,6 +257,8 @@ describe('SqsConsumer (real PostgreSQL and MiniStack)', () => {
     expect(await count('inbox_messages')).toBe(0);
     expect(await queueCounts(queueUrl)).toEqual({ visible: 0, inFlight: 1 });
 
+    expect(metrics.messageRetries).toBe(1);
+
     await pollUntil(async () => (await statusOf('ext-1')) === 'PROCESSED');
 
     expect(await balanceOf()).toBe('70.00');
@@ -285,6 +290,8 @@ describe('SqsConsumer (real PostgreSQL and MiniStack)', () => {
       expect(dead?.MessageAttributes?.ErrorCode?.StringValue).toBe('InvalidMessageError');
       expect(dead?.MessageAttributes?.ErrorReason?.StringValue).toContain('not valid JSON');
       expect(dead?.Attributes?.MessageGroupId).toBe(walletId);
+      expect(metrics.deadLettered).toBe(1);
+      expect(metrics.messageRetries).toBe(0);
     });
 
     it('an unknown wallet: dead-lettered, nothing written', async () => {

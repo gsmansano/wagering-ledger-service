@@ -6,6 +6,7 @@ import { InvalidInputError } from '../../domain/shared/invalid-input-error';
 import { Money, type MoneyProps } from '../../domain/shared/money';
 import { payloadHash } from '../../domain/shared/payload-hash';
 import { WagerTransaction, WagerTransactionKind } from '../../domain/transaction/wager-transaction';
+import { type Metrics, NO_METRICS, type ProcessingResult } from '../ports/metrics';
 import type { PersistedWagerTransaction } from '../ports/wager-transaction.repository';
 import type { Repositories, UnitOfWork } from '../ports/unit-of-work';
 import { WalletNotFoundError } from '../wallet/wallet-not-found.error';
@@ -57,6 +58,7 @@ export interface ProcessWagerTransactionDeps {
   now: () => Date;
   newId: () => string;
   referenceRetry?: ReferenceRetryPolicy;
+  metrics?: Metrics;
 }
 
 export class ProcessWagerTransaction {
@@ -84,6 +86,32 @@ export class ProcessWagerTransaction {
   async execute(
     command: ProcessWagerTransactionCommand,
     inbox?: InboxContext,
+  ): Promise<ProcessWagerTransactionResult | DuplicateMessage> {
+    const metrics = this.deps.metrics ?? NO_METRICS;
+    const started = performance.now();
+    let result: ProcessingResult = 'error';
+    try {
+      const outcome = await this.process(command, inbox);
+      // The transaction has committed: only now is it something that happened.
+      if ('duplicateMessage' in outcome) {
+        result = 'duplicate_message';
+        metrics.duplicateDetected('inbox');
+      } else if (outcome.idempotentReplay) {
+        result = 'replay';
+        metrics.duplicateDetected('idempotency_key');
+      } else {
+        result = 'settled';
+        metrics.transactionStatus(outcome.transaction.kind, outcome.transaction.status);
+      }
+      return outcome;
+    } finally {
+      metrics.processingTime(result, (performance.now() - started) / 1000);
+    }
+  }
+
+  private async process(
+    command: ProcessWagerTransactionCommand,
+    inbox: InboxContext | undefined,
   ): Promise<ProcessWagerTransactionResult | DuplicateMessage> {
     const { unitOfWork, now, newId } = this.deps;
     const retryPolicy = this.deps.referenceRetry ?? DEFAULT_REFERENCE_RETRY_POLICY;

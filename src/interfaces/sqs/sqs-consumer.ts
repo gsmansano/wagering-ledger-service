@@ -8,6 +8,7 @@ import {
   type Message,
   type SQSClient,
 } from '@aws-sdk/client-sqs';
+import { type Metrics, NO_METRICS } from '../../application/ports/metrics';
 import { errorFields } from '../../infrastructure/logging/log-fields';
 import type { MessageDisposition } from './message-disposition';
 
@@ -60,6 +61,7 @@ export class SqsConsumer {
     private readonly sqs: SQSClient,
     private readonly handler: MessageHandler,
     private readonly options: SqsConsumerOptions,
+    private readonly metrics: Metrics = NO_METRICS,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -194,6 +196,7 @@ export class SqsConsumer {
           await this.delete(message);
           return true;
         case 'retry':
+          this.metrics.messageRetried();
           this.logger.warn(
             { event: 'message_retry', messageId: message.MessageId, receiveCount, ...errorFields(disposition.cause) },
             'Message will be retried',
@@ -214,6 +217,7 @@ export class SqsConsumer {
   /** Explicit DLQ send, then delete. If the send fails the message stays and the redrive policy still applies. */
   private async deadLetter(message: Message, disposition: Extract<MessageDisposition, { kind: 'dead-letter' }>): Promise<boolean> {
     const { dlq } = await this.queues();
+    this.metrics.messageDeadLettered();
     this.logger.error(
       { event: 'message_dead_lettered', messageId: message.MessageId, errorName: disposition.code, errorMessage: disposition.reason },
       'Message is permanently invalid',

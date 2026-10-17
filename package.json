@@ -30,6 +30,7 @@
     "nestjs-pino": "4",
     "pino": "10",
     "pino-http": "11",
+    "prom-client": "15",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2"
   },

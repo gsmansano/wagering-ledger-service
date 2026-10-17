@@ -155,8 +155,8 @@ Section references (§) point to the original requirements document.
 ## M10 — Observability — §12 _(current)_
 
 - [x] Structured JSON logs with correlation fields and no sensitive payloads (step 1, #63)
-- [ ] Metrics: status counts, duplicates, retries, DLQ, lock conflicts, outbox lag, latency, reconciliation divergences (§9 asks for them to be counted)
-- [ ] Readiness (built in M6, decision #48) exposed as a metric as well; every log line carries `correlationId` (set from `X-Correlation-Id` in M6)
+- [ ] Metrics: status counts, duplicates, retries, DLQ, lock conflicts, outbox lag, latency, reconciliation divergences (§9 asks for them to be counted). Step 2 (#64) covers all but lock conflicts, which arrive with step 3
+- [ ] Readiness (built in M6, decision #48) exposed as a metric as well (done in step 2: `wagering_dependency_up`); every log line carries `correlationId` (set from `X-Correlation-Id` in M6)
 - [ ] Explicit connection pool size and a `lock_timeout` on the wallet lock, answered with a retryable status; lock-wait time as a metric (review finding M-2)
 
 ## M11 — Documentation and final review — §14

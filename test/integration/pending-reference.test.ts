@@ -13,6 +13,7 @@ import { CreateWallet } from '../../src/application/wallet/create-wallet';
 import { FailureCode } from '../../src/domain/transaction/failure-code';
 import { WagerTransactionKind as Kind, WagerTransactionStatus as Status } from '../../src/domain/transaction/wager-transaction';
 import { MikroOrmUnitOfWork } from '../../src/infrastructure/database/repositories/mikro-orm-unit-of-work';
+import { CountingMetrics } from '../support/counting-metrics';
 import { initTestOrm, truncateAll } from '../support/database';
 import { assertLedgerMatchesBalance } from '../support/ledger';
 
@@ -60,6 +61,8 @@ describe('PENDING_REFERENCE (real PostgreSQL)', () => {
   const reversalOf = (kind: Kind.Refund | Kind.Rollback, externalId: string, amount: string, o = {}) =>
     command(kind, amount, { referenceExternalTransactionId: externalId, ...o });
 
+  const metrics = new CountingMetrics();
+
   beforeAll(async () => {
     orm = await initTestOrm();
     const deps = {
@@ -67,6 +70,7 @@ describe('PENDING_REFERENCE (real PostgreSQL)', () => {
       now: () => new Date(),
       newId: () => Bun.randomUUIDv7(),
       referenceRetry: policy,
+      metrics,
     };
     createWallet = new CreateWallet(deps);
     process = new ProcessWagerTransaction(deps);
@@ -117,10 +121,13 @@ describe('PENDING_REFERENCE (real PostgreSQL)', () => {
       const refund = await process.execute(reversalOf(Kind.Refund, 'ext-bet', '30.00'));
       await process.execute(command(Kind.Bet, '30.00', { externalTransactionId: 'ext-bet' })); // 70
       await query('truncate outbox_messages');
+      Object.assign(metrics, new CountingMetrics());
 
       const resolved = await resolve.execute(refund.transaction.id);
 
       expect(resolved.outcome).toBe(ResolveOutcome.Settled);
+      expect(metrics.pendingAttempts).toBe(1);
+      expect(metrics.statuses).toEqual(['REFUND:PROCESSED']);
       expect(resolved.transaction!.status).toBe(Status.Processed);
       expect(await balanceOf()).toBe('100.00');
       expect(await eventTypes()).toEqual(['WagerTransactionProcessed', 'WalletBalanceChanged']);
@@ -153,11 +160,14 @@ describe('PENDING_REFERENCE (real PostgreSQL)', () => {
     it('while the reference is still missing, a retry only counts and reschedules (2s after the first)', async () => {
       const pending = await process.execute(reversalOf(Kind.Refund, 'ext-bet', '30.00'));
       await query('truncate outbox_messages');
+      Object.assign(metrics, new CountingMetrics());
       const before = Date.now();
 
       const resolved = await resolve.execute(pending.transaction.id);
 
       expect(resolved.outcome).toBe(ResolveOutcome.StillWaiting);
+      expect(metrics.pendingAttempts).toBe(1);
+      expect(metrics.statuses).toEqual([]); // still pending: no new status
       expect(resolved.transaction!.status).toBe(Status.PendingReference);
       const state = await retryState(pending.transaction.id);
       expect(state.reference_attempts).toBe(1);
@@ -212,9 +222,11 @@ describe('PENDING_REFERENCE (real PostgreSQL)', () => {
     });
 
     it('an unknown or already settled transaction is NOT_PENDING', async () => {
+      Object.assign(metrics, new CountingMetrics());
       expect((await resolve.execute(crypto.randomUUID())).outcome).toBe(ResolveOutcome.NotPending);
       const bet = await process.execute(command(Kind.Bet, '10.00'));
       expect((await resolve.execute(bet.transaction.id)).outcome).toBe(ResolveOutcome.NotPending);
+      expect(metrics.pendingAttempts).toBe(0); // nothing was attempted
     });
   });
 

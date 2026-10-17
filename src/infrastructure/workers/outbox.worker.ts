@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { type Metrics, NO_METRICS } from '../../application/ports/metrics';
 import { PublishOutcome, type PublishOutbox } from '../../application/outbox/publish-outbox';
 import { errorFields } from '../logging/log-fields';
 
@@ -25,6 +26,7 @@ export class OutboxWorker {
   constructor(
     private readonly publishOutbox: PublishOutbox,
     private readonly options: OutboxWorkerOptions,
+    private readonly metrics: Metrics = NO_METRICS,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -60,8 +62,10 @@ export class OutboxWorker {
       const { id, eventType, aggregateId, attempts } = result.message;
       const fields = { eventId: id, eventType, walletId: aggregateId, attempt: attempts, ...errorFields(result.error) };
       if (result.outcome === PublishOutcome.Retried) {
+        this.metrics.outboxPublishFailed(false);
         this.logger.warn({ event: 'outbox_publish_retry', ...fields }, 'Publishing an event failed, will retry');
       } else if (result.outcome === PublishOutcome.Parked) {
+        this.metrics.outboxPublishFailed(true);
         this.logger.error(
           { event: 'outbox_event_parked', ...fields },
           'Event parked; later events of its wallet are held until it is requeued',

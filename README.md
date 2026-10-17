@@ -168,6 +168,28 @@ Logs never carry amounts, balances, player ids, request bodies or error messages
 allowlist in `src/infrastructure/logging/log-fields.ts`; a key that is not listed is dropped, so logging more is a
 deliberate edit there.
 
+## Metrics
+
+`GET /metrics` serves the Prometheus text format (public, like the health checks; it is not written to the request log).
+Counters are per instance, so sum them across instances. The gauges are read from PostgreSQL and SQS at each scrape, so
+every instance reports the same value; a gauge whose source is unreachable reads `NaN`.
+
+| Metric | Meaning |
+| --- | --- |
+| `wagering_transactions_total{kind,status}` | transactions that reached a status (a pending reversal counts again when it settles) |
+| `wagering_duplicates_total{source}` | deliveries that changed nothing: `idempotency_key` (replay) or `inbox` (message seen before) |
+| `wagering_processing_seconds{result}` | histogram of the use case, including the wallet-lock wait; `result` is `settled`, `replay`, `duplicate_message` or `error` |
+| `wagering_pending_reference_attempts_total` | attempts to resolve a reversal waiting for its reference |
+| `wagering_message_retries_total`, `wagering_messages_dead_lettered_total` | queue messages left for redelivery, and sent to the DLQ as permanently invalid |
+| `wagering_outbox_publish_failures_total{outcome}` | failed publish attempts; `parked` is the last one |
+| `wagering_reconciliation_divergences_total` | reconciliations that found a balance different from the ledger |
+| `wagering_outbox_pending_events`, `wagering_outbox_lag_seconds`, `wagering_outbox_parked_events` | events waiting, age of the oldest, and parked events (each holds its wallet's later events) |
+| `wagering_dlq_messages` | messages waiting in the wager DLQ |
+| `wagering_dependency_up{dependency}` | 1 when PostgreSQL or SQS answers the readiness probe |
+
+Labels hold kinds, statuses and outcomes only, never wallet, player or provider ids. Lock conflicts and lock-wait time
+arrive with the lock timeout (M10 step 3).
+
 ## Project layout
 
 ```

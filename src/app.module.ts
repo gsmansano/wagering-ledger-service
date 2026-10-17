@@ -19,6 +19,10 @@ import { createOrmConfig } from './infrastructure/database/mikro-orm.config';
 import { newId } from './infrastructure/id-generator';
 import { errorFields } from './infrastructure/logging/log-fields';
 import { MikroOrmUnitOfWork } from './infrastructure/database/repositories/mikro-orm-unit-of-work';
+import { readOutboxStats } from './infrastructure/database/outbox-stats';
+import { PrometheusMetrics } from './infrastructure/metrics/prometheus-metrics';
+import { queueDepth } from './infrastructure/messaging/queue-depth';
+import { MetricsController } from './interfaces/http/metrics.controller';
 import { ReadinessService } from './infrastructure/readiness.service';
 import { OutboxWorker } from './infrastructure/workers/outbox.worker';
 import { PendingReferenceWorker } from './infrastructure/workers/pending-reference.worker';
@@ -51,7 +55,7 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
     LoggerModule.forRootAsync({ imports: [], providers: [], useFactory: () => createLoggerParams(loadConfig().logLevel) }),
     SqsModule,
   ],
-  controllers: [HealthController, WalletsController, WageringController, ProvidersController],
+  controllers: [HealthController, MetricsController, WalletsController, WageringController, ProvidersController],
   providers: [
     { provide: APP_FILTER, useClass: ApplicationErrorFilter },
     { provide: APP_GUARD, useClass: AuthGuard },
@@ -72,7 +76,21 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
         ),
       inject: [EntityManager, SQSClient],
     },
-    { provide: ReconcileWallet, useFactory: (unitOfWork: UnitOfWork) => new ReconcileWallet(unitOfWork), inject: [UNIT_OF_WORK] },
+    {
+      provide: PrometheusMetrics,
+      useFactory: (em: EntityManager, sqs: SQSClient, readiness: ReadinessService) =>
+        new PrometheusMetrics({
+          outbox: () => readOutboxStats(em),
+          dlqDepth: () => queueDepth(sqs, WAGER_DLQ),
+          readiness: () => readiness.check(),
+        }),
+      inject: [EntityManager, SQSClient, ReadinessService],
+    },
+    {
+      provide: ReconcileWallet,
+      useFactory: (unitOfWork: UnitOfWork, metrics: PrometheusMetrics) => new ReconcileWallet(unitOfWork, metrics),
+      inject: [UNIT_OF_WORK, PrometheusMetrics],
+    },
     { provide: UNIT_OF_WORK, useFactory: (em: EntityManager) => new MikroOrmUnitOfWork(em), inject: [EntityManager] },
     {
       provide: CreateWallet,
@@ -96,32 +114,37 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
     },
     {
       provide: ProcessWagerTransaction,
-      useFactory: (unitOfWork: UnitOfWork, referenceRetry: ReferenceRetryPolicy) =>
-        new ProcessWagerTransaction({ unitOfWork, now: () => new Date(), newId, referenceRetry }),
-      inject: [UNIT_OF_WORK, REFERENCE_RETRY],
+      useFactory: (unitOfWork: UnitOfWork, referenceRetry: ReferenceRetryPolicy, metrics: PrometheusMetrics) =>
+        new ProcessWagerTransaction({ unitOfWork, now: () => new Date(), newId, referenceRetry, metrics }),
+      inject: [UNIT_OF_WORK, REFERENCE_RETRY, PrometheusMetrics],
     },
     {
       provide: ResolvePendingReference,
-      useFactory: (unitOfWork: UnitOfWork, referenceRetry: ReferenceRetryPolicy) =>
-        new ResolvePendingReference({ unitOfWork, now: () => new Date(), newId, referenceRetry }),
-      inject: [UNIT_OF_WORK, REFERENCE_RETRY],
+      useFactory: (unitOfWork: UnitOfWork, referenceRetry: ReferenceRetryPolicy, metrics: PrometheusMetrics) =>
+        new ResolvePendingReference({ unitOfWork, now: () => new Date(), newId, referenceRetry, metrics }),
+      inject: [UNIT_OF_WORK, REFERENCE_RETRY, PrometheusMetrics],
     },
     {
       provide: SqsConsumer,
-      useFactory: (sqs: SQSClient, processTransaction: ProcessWagerTransaction) => {
+      useFactory: (sqs: SQSClient, processTransaction: ProcessWagerTransaction, metrics: PrometheusMetrics) => {
         const { consumer } = loadConfig().sqs;
         const handler = new WagerMessageHandler(processTransaction, { baseMs: consumer.retryBaseMs, capMs: consumer.retryCapMs });
-        return new SqsConsumer(sqs, handler, {
-          enabled: consumer.enabled,
-          queueName: WAGER_QUEUE,
-          dlqName: WAGER_DLQ,
-          batchSize: consumer.batchSize,
-          pollers: consumer.pollers,
-          waitTimeSeconds: consumer.waitTimeSeconds,
-          shutdownTimeoutMs: consumer.shutdownTimeoutMs,
-        });
+        return new SqsConsumer(
+          sqs,
+          handler,
+          {
+            enabled: consumer.enabled,
+            queueName: WAGER_QUEUE,
+            dlqName: WAGER_DLQ,
+            batchSize: consumer.batchSize,
+            pollers: consumer.pollers,
+            waitTimeSeconds: consumer.waitTimeSeconds,
+            shutdownTimeoutMs: consumer.shutdownTimeoutMs,
+          },
+          metrics,
+        );
       },
-      inject: [SQSClient, ProcessWagerTransaction],
+      inject: [SQSClient, ProcessWagerTransaction, PrometheusMetrics],
     },
     {
       provide: SqsEventPublisher,
@@ -143,11 +166,11 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
     },
     {
       provide: OutboxWorker,
-      useFactory: (publishOutbox: PublishOutbox) => {
+      useFactory: (publishOutbox: PublishOutbox, metrics: PrometheusMetrics) => {
         const { workerEnabled, pollIntervalMs, batchSize } = loadConfig().outbox;
-        return new OutboxWorker(publishOutbox, { enabled: workerEnabled, pollIntervalMs, batchSize });
+        return new OutboxWorker(publishOutbox, { enabled: workerEnabled, pollIntervalMs, batchSize }, metrics);
       },
-      inject: [PublishOutbox],
+      inject: [PublishOutbox, PrometheusMetrics],
     },
     {
       provide: PendingReferenceWorker,

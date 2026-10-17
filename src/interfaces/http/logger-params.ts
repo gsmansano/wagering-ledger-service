@@ -5,8 +5,8 @@ import { correlationIdFrom } from './request-parsing';
 import { newId } from '../../infrastructure/id-generator';
 import { loggable } from '../../infrastructure/logging/log-fields';
 
-// Health probes arrive every few seconds from the orchestrator and would drown the log.
-const QUIET_PATHS = ['/health/'];
+// Health probes and metric scrapes arrive every few seconds from the orchestrator and would drown the log.
+const QUIET_PATHS = ['/health/', '/metrics'];
 
 /**
  * JSON lines, one per event. `log` filters what call sites pass, `bindings` what `assign` and child loggers

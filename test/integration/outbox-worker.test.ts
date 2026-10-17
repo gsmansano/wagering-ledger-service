@@ -20,6 +20,7 @@ import { MikroOrmUnitOfWork } from '../../src/infrastructure/database/repositori
 import { eventsQueueAttributes } from '../../src/infrastructure/messaging/queue-attributes';
 import { SqsEventPublisher } from '../../src/infrastructure/messaging/sqs-event-publisher';
 import { OutboxWorker } from '../../src/infrastructure/workers/outbox.worker';
+import { CountingMetrics } from '../support/counting-metrics';
 import { initTestOrm, truncateAll } from '../support/database';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -57,7 +58,7 @@ describe('OutboxWorker (real PostgreSQL and MiniStack)', () => {
 
   /** An instance: its own publisher, use case and worker, all against the same database and queue. */
   const instance = (
-    options: { unitOfWork?: UnitOfWork; publisher?: EventPublisher; pollIntervalMs?: number; retry?: { baseMs: number; capMs: number; maxAttempts: number } } = {},
+    options: { unitOfWork?: UnitOfWork; publisher?: EventPublisher; pollIntervalMs?: number; retry?: { baseMs: number; capMs: number; maxAttempts: number }; metrics?: CountingMetrics } = {},
   ) => {
     const publisher = options.publisher ?? new SqsEventPublisher(sqs, queueName);
     const publishOutbox = new PublishOutbox({
@@ -66,7 +67,7 @@ describe('OutboxWorker (real PostgreSQL and MiniStack)', () => {
       now: () => new Date(),
       retry: options.retry,
     });
-    const worker = new OutboxWorker(publishOutbox, { enabled: true, pollIntervalMs: options.pollIntervalMs ?? 20, batchSize: 50 });
+    const worker = new OutboxWorker(publishOutbox, { enabled: true, pollIntervalMs: options.pollIntervalMs ?? 20, batchSize: 50 }, options.metrics);
     started.push(worker);
     return worker;
   };
@@ -210,10 +211,12 @@ describe('OutboxWorker (real PostgreSQL and MiniStack)', () => {
     const flaky = new FlakyPublisher(new SqsEventPublisher(sqs, queueName));
     flaky.failures = 2;
 
-    instance({ publisher: flaky, retry: { baseMs: 20, capMs: 40, maxAttempts: 10 } }).start();
+    const metrics = new CountingMetrics();
+    instance({ publisher: flaky, retry: { baseMs: 20, capMs: 40, maxAttempts: 10 }, metrics }).start();
     await untilDrained();
 
     expect(await receive(1)).toHaveLength(1);
+    expect(metrics.outboxFailures).toEqual(['retry', 'retry']);
     const [row] = await query<{ attempts: number }>('select attempts from outbox_messages');
     expect(row!.attempts).toBe(2);
   });
