@@ -22,6 +22,8 @@ export interface Metrics {
   messageDeadLettered(): void;
   /** Publishing an outbox event failed; `parked` is true when this was the last attempt. */
   outboxPublishFailed(parked: boolean): void;
+  /** The wait for a wallet lock ended: it was acquired, or the lock timeout gave up. Zero-wait locks count too. */
+  walletLockWaited(outcome: 'acquired' | 'timeout', seconds: number): void;
   /** A reconciliation found a wallet whose balance differs from its ledger. */
   reconciliationDivergence(): void;
 }
@@ -35,5 +37,6 @@ export const NO_METRICS: Metrics = {
   messageRetried: () => {},
   messageDeadLettered: () => {},
   outboxPublishFailed: () => {},
+  walletLockWaited: () => {},
   reconciliationDivergence: () => {},
 };

@@ -7,14 +7,18 @@ import { MikroOrmWagerTransactionRepository } from './mikro-orm-wager-transactio
 import { MikroOrmWalletRepository } from './mikro-orm-wallet.repository';
 
 export class MikroOrmUnitOfWork implements UnitOfWork {
-  constructor(private readonly em: EntityManager) {}
+  /** `walletLockTimeoutMs` bounds the wait for a wallet lock (decision #65); 0 waits without limit. */
+  constructor(
+    private readonly em: EntityManager,
+    private readonly walletLockTimeoutMs = 0,
+  ) {}
 
   // `transactional` forks the EntityManager, so every run gets its own Identity
   // Map and its own connection; concurrent runs never share state.
   run<T>(work: (repositories: Repositories) => Promise<T>): Promise<T> {
     return this.em.transactional((tx) =>
       work({
-        wallets: new MikroOrmWalletRepository(tx),
+        wallets: new MikroOrmWalletRepository(tx, this.walletLockTimeoutMs),
         transactions: new MikroOrmWagerTransactionRepository(tx),
         ledger: new MikroOrmLedgerRepository(tx),
         inbox: new MikroOrmInboxRepository(tx),

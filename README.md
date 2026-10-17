@@ -29,6 +29,7 @@ bun test
 | `bun run poc:reversals` | Curl walkthrough of M5: a REFUND before its BET is parked, the worker applies it after the BET arrives, a second reversal is refused, an orphan reversal is rejected (needs the app running with short retry timings, see below) |
 | `bun run poc:consumer` | AWS CLI walkthrough of M7: send queue messages for a BET (applied once), a duplicate (no effect) and two invalid messages (they land in the DLQ with the reason); runs `amazon/aws-cli` in Docker when `aws` is not installed (needs the app running) |
 | `bun run poc:outbox` | Walkthrough of M8: an instance commits and dies before publishing and another publishes the events, a repeated send leaves one copy in the queue, a parked event holds back its own wallet until it is requeued; starts its own app instances on ports 3021 and 3022, so the Compose `app` must be stopped (needs `postgres`, `ministack` and `migrate` running) |
+| `bun run poc:observability` | starts an instance and shows the JSON logs, the metrics and a request shed by the wallet-lock timeout |
 | `bun run poc:multi` | Walkthrough of M9: three instances share four wallets under a mixed load, one is killed with SIGKILL mid-load, and the script prints the stored balance next to the ledger sum of every wallet; starts its own app instances on ports 3031 to 3033, so the Compose `app` must be stopped (needs `postgres`, `ministack` and `migrate` running) |
 | `bun run poc:schema` | Try to break each database constraint and show PostgreSQL refusing it (needs `docker compose up`; leaves no data) |
 | `bun run typecheck` | Type-check with `tsc --noEmit` |
@@ -187,8 +188,21 @@ every instance reports the same value; a gauge whose source is unreachable reads
 | `wagering_dlq_messages` | messages waiting in the wager DLQ |
 | `wagering_dependency_up{dependency}` | 1 when PostgreSQL or SQS answers the readiness probe |
 
-Labels hold kinds, statuses and outcomes only, never wallet, player or provider ids. Lock conflicts and lock-wait time
-arrive with the lock timeout (M10 step 3).
+| `wagering_wallet_lock_wait_seconds{outcome}` | histogram of the wait for a wallet lock; `timeout` is a request shed with a `503` |
+
+Labels hold kinds, statuses and outcomes only, never wallet, player or provider ids.
+
+### Bounded wait for the wallet lock
+
+A request waits for its wallet's lock inside its SQL transaction and holds a connection meanwhile. `WALLET_LOCK_TIMEOUT_MS`
+(default 5000, 0 = no limit) caps that wait, queue included: past it the transaction rolls back and the request gets
+`503` with `Retry-After`, nothing persisted, so the provider resends the same `Idempotency-Key`. The cap is a
+`statement_timeout` applied to the lock statement only (decision #65). `lock_timeout` was not used: it limits each wait
+step, and in a queue behind a hot wallet every step is short, so it never fires.
+
+`bun run poc:observability` starts an instance and shows the log line of a bet, a replay and a rejection, the counters
+they move, a request timing out on a wallet lock held from `psql`, and the gauges. The wallets and outbox events it creates
+stay in the development database.
 
 ## Project layout
 

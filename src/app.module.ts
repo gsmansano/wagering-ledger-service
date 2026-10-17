@@ -91,7 +91,11 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
       useFactory: (unitOfWork: UnitOfWork, metrics: PrometheusMetrics) => new ReconcileWallet(unitOfWork, metrics),
       inject: [UNIT_OF_WORK, PrometheusMetrics],
     },
-    { provide: UNIT_OF_WORK, useFactory: (em: EntityManager) => new MikroOrmUnitOfWork(em), inject: [EntityManager] },
+    {
+      provide: UNIT_OF_WORK,
+      useFactory: (em: EntityManager) => new MikroOrmUnitOfWork(em, loadConfig().walletLockTimeoutMs),
+      inject: [EntityManager],
+    },
     {
       provide: CreateWallet,
       useFactory: (unitOfWork: UnitOfWork) =>

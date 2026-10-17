@@ -70,6 +70,13 @@ export class PrometheusMetrics implements Metrics {
     labelNames: ['outcome'],
     registers: [this.registry],
   });
+  private readonly lockWait = new Histogram({
+    name: 'wagering_wallet_lock_wait_seconds',
+    help: 'Time spent waiting for a wallet lock; a timeout means the request was answered with a retryable 503',
+    labelNames: ['outcome'],
+    buckets: LATENCY_BUCKETS,
+    registers: [this.registry],
+  });
   private readonly divergences = new Counter({
     name: 'wagering_reconciliation_divergences_total',
     help: 'Reconciliations that found a balance different from the ledger',
@@ -131,6 +138,10 @@ export class PrometheusMetrics implements Metrics {
 
   outboxPublishFailed(parked: boolean): void {
     this.outboxFailures.inc({ outcome: parked ? 'parked' : 'retry' });
+  }
+
+  walletLockWaited(outcome: 'acquired' | 'timeout', seconds: number): void {
+    this.lockWait.observe({ outcome }, seconds);
   }
 
   reconciliationDivergence(): void {

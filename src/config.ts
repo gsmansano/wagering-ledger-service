@@ -5,6 +5,8 @@ export interface AppConfig {
   databaseUrl: string;
   /** Connections one instance may hold. A request waiting for the wallet lock holds one for the whole wait. */
   databasePoolMax: number;
+  /** Longest total wait for a wallet lock before the request gets a retryable 503; 0 waits without limit (#65). */
+  walletLockTimeoutMs: number;
   sqs: {
     endpoint: string;
     region: string;
@@ -49,6 +51,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     logLevel: env.LOG_LEVEL ?? 'info',
     databaseUrl: env.DATABASE_URL ?? 'postgres://wagering:wagering@localhost:5432/wagering',
     databasePoolMax: Number(env.DATABASE_POOL_MAX ?? 10),
+    walletLockTimeoutMs: Number(env.WALLET_LOCK_TIMEOUT_MS ?? 5_000),
     sqs: {
       endpoint: env.SQS_ENDPOINT ?? 'http://localhost:4566',
       region: env.AWS_REGION ?? 'us-east-1',

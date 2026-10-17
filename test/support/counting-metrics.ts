@@ -10,6 +10,7 @@ export class CountingMetrics implements Metrics {
   deadLettered = 0;
   outboxFailures: ('retry' | 'parked')[] = [];
   divergences = 0;
+  lockWaits: ('acquired' | 'timeout')[] = [];
 
   transactionStatus(kind: string, status: string): void {
     this.statuses.push(`${kind}:${status}`);
@@ -31,6 +32,9 @@ export class CountingMetrics implements Metrics {
   }
   outboxPublishFailed(parked: boolean): void {
     this.outboxFailures.push(parked ? 'parked' : 'retry');
+  }
+  walletLockWaited(outcome: 'acquired' | 'timeout'): void {
+    this.lockWaits.push(outcome);
   }
   reconciliationDivergence(): void {
     this.divergences += 1;

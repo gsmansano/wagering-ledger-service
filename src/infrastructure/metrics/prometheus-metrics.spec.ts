@@ -25,6 +25,17 @@ describe('PrometheusMetrics', () => {
     expect(body).toContain('wagering_outbox_publish_failures_total{outcome="parked"} 1');
   });
 
+  it('observes the wallet-lock wait by outcome', async () => {
+    const metrics = new PrometheusMetrics(healthy);
+    metrics.walletLockWaited('acquired', 0.002);
+    metrics.walletLockWaited('timeout', 5);
+
+    const { body } = await metrics.render();
+
+    expect(body).toContain('wagering_wallet_lock_wait_seconds_count{outcome="acquired"} 1');
+    expect(body).toContain('wagering_wallet_lock_wait_seconds_count{outcome="timeout"} 1');
+  });
+
   it('reads the gauges from the sources at every scrape', async () => {
     const depth = [2, 7];
     const metrics = new PrometheusMetrics({ ...healthy, dlqDepth: async () => depth.shift()! });

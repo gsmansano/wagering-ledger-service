@@ -11,6 +11,7 @@ import type { PersistedWagerTransaction } from '../ports/wager-transaction.repos
 import type { Repositories, UnitOfWork } from '../ports/unit-of-work';
 import { WalletNotFoundError } from '../wallet/wallet-not-found.error';
 import { ApplyOutcome, applyUnderLock } from './apply-transaction';
+import { lockWallet } from './lock-wallet';
 import { IdempotencyConflictError } from './idempotency-conflict.error';
 import { InboxPayloadConflictError } from './inbox-payload-conflict.error';
 import {
@@ -164,7 +165,7 @@ export class ProcessWagerTransaction {
       }
 
       // The first statement that touches the balance: from here to commit, other transactions on this wallet wait.
-      const wallet = (await repos.wallets.findByIdForUpdate(command.walletId))!; // exists unless deleted since the read above
+      const wallet = (await lockWallet(repos, command.walletId, this.deps.metrics))!; // exists unless deleted since the read above
       if (wallet.playerId !== command.playerId) {
         throw new InvalidInputError(`Wallet ${wallet.id} does not belong to player ${command.playerId}`);
       }

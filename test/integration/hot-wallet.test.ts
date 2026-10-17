@@ -8,7 +8,9 @@ import { CURRENCY, openWallets, PROVIDER_ID } from '../support/load';
 // Hot-wallet experiment (M9). A request waits for the wallet lock inside its SQL transaction, so it holds a
 // connection while it waits. With more requests queued on one wallet than the pool holds, requests for other wallets
 // wait for a connection. This measures how long, as a documented limit rather than a guarantee: it asserts
-// correctness and prints the numbers; the latencies are not thresholds.
+// correctness and prints the numbers; the latencies are not thresholds. Since decision #65 a request that waits
+// longer than WALLET_LOCK_TIMEOUT_MS for the wallet lock is shed with a 503 and persists nothing; those are counted
+// out of the expected transactions, and every other request must be settled.
 const BURST = Number(process.env.HOT_BURST ?? 200);
 const COLD_WALLETS = 5;
 
@@ -42,6 +44,7 @@ describe('hot wallet (one instance, real PostgreSQL)', () => {
       const hot = wallets[0]!;
       const cold = wallets.slice(1);
       let sequence = 0;
+      let shed = 0; // answered 503: the wallet-lock wait hit its limit (decision #65) and nothing was persisted
 
       const bet = async (wallet: { id: string; playerId: string }) => {
         const id = `ext-${pool}-${++sequence}`;
@@ -55,6 +58,7 @@ describe('hot wallet (one instance, real PostgreSQL)', () => {
           }),
         });
         await res.arrayBuffer();
+        if (res.status === 503) shed += 1;
         return { status: res.status, ms: performance.now() - started };
       };
 
@@ -82,7 +86,7 @@ describe('hot wallet (one instance, real PostgreSQL)', () => {
       burstDone = true;
       const during = await probing;
 
-      const submitted = sequence;
+      const submitted = sequence - shed; // a shed request left no transaction behind; the provider would resend it
       await waitForConvergence(orm, sqs, { ...target, expectedTransactions: submitted }, 60_000);
       await assertInvariants(orm, sqs, { ...target, expectedTransactions: submitted });
 
@@ -90,6 +94,7 @@ describe('hot wallet (one instance, real PostgreSQL)', () => {
       const row = {
         pool,
         burst: BURST,
+        shed,
         burstSeconds: Number((burstMs / 1000).toFixed(2)),
         hot: summarize(burst.map((r) => r.ms)),
         coldBaseline: summarize(baseline.map((r) => r.ms)),

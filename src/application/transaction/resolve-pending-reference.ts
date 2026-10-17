@@ -6,6 +6,7 @@ import { type WagerTransaction, WagerTransactionStatus } from '../../domain/tran
 import { type Metrics, NO_METRICS } from '../ports/metrics';
 import type { Repositories, UnitOfWork } from '../ports/unit-of-work';
 import { ApplyOutcome, applyUnderLock } from './apply-transaction';
+import { lockWallet } from './lock-wallet';
 import {
   DEFAULT_REFERENCE_RETRY_POLICY,
   referenceRetryAt,
@@ -85,7 +86,7 @@ export class ResolvePendingReference {
     if (transaction.status !== WagerTransactionStatus.PendingReference) {
       return { outcome: ResolveOutcome.NotPending, transaction };
     }
-    const wallet = (await repos.wallets.findByIdForUpdate(transaction.walletId))!; // the foreign key keeps it
+    const wallet = (await lockWallet(repos, transaction.walletId, this.deps.metrics))!; // the foreign key keeps it
 
     const at = now();
     const attempts = (await repos.transactions.referenceAttempts(transactionId)) + 1;

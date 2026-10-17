@@ -13,6 +13,7 @@
     "poc:consumer": "bash scripts/poc-consumer.sh",
     "poc:outbox": "bash scripts/poc-outbox.sh",
     "poc:multi": "bash scripts/poc-multi.sh",
+    "poc:observability": "bash scripts/poc-observability.sh",
     "poc:schema": "docker compose exec -T postgres psql -U wagering -d wagering -f - < scripts/poc-schema.sql",
     "migration:up": "bun src/infrastructure/database/migrate.ts up",
     "migration:down": "bun src/infrastructure/database/migrate.ts down"
