@@ -2,6 +2,19 @@
 
 Design decisions, trade-offs and known limitations of the wagering ledger service. Numbers in parentheses (`#25`) refer to the decisions log in [`PLAN.md`](PLAN.md), which records the alternatives that were weighed. Setup and commands are in [`README.md`](README.md).
 
+## At a glance
+
+- **Money** is `decimal.js` in code, `NUMERIC(19,2)` in the database and `"25.00"` strings in contracts; never a `number`.
+- **Concurrency:** one pessimistic row lock per wallet (`SELECT … FOR NO KEY UPDATE`), no global lock; PostgreSQL is the only coordinator, so any number of instances is safe.
+- **Idempotency** is persisted: `INSERT … ON CONFLICT DO NOTHING` on the provider's key and transaction id; a replay returns the original result, a different payload is a `409`.
+- **One SQL transaction** writes the balance, the ledger entry, the transaction status, the inbox row (queue messages) and the outbox events.
+- **Invariants** are also database constraints: non-negative balance, uniqueness, an immutable and ordered ledger, at most one reversal per transaction.
+- **Events** are published after the commit by an outbox worker, in order per wallet, at least once; a failed event holds its wallet's stream rather than leaving a gap.
+- **Queue messages** follow the HTTP path: ack only after commit, business results acked, transient errors retried, permanent errors sent to the DLQ.
+- **Main limitations:** a hot wallet is serialized and holds connections while it waits, and the outbox publishes one event per transaction (section 13).
+
+Contents: [1 Shape](#1-shape-of-the-system) · [2 Money](#2-money) · [3 Invariants](#3-invariants-and-where-they-are-enforced) · [4 Write path](#4-the-write-path) · [5 Concurrency](#5-concurrency) · [6 Idempotency](#6-idempotency) · [7 Reversals](#7-reversals-and-the-interpretations-added-to-the-specification) · [8 HTTP](#8-http-contract) · [9 Authentication](#9-authentication) · [10 Queue consumer](#10-queue-consumer) · [11 Outbox](#11-transactional-outbox-and-the-event-contract) · [12 Observability](#12-observability) · [13 Limitations](#13-limitations)
+
 ## 1. Shape of the system
 
 The service keeps a wallet per player and currency and applies BET, WIN, LOSS, REFUND and ROLLBACK operations to it. Operations arrive over HTTP and over an SQS FIFO queue and go through the same use case. Every balance change is recorded in an append-only ledger, and every change is announced to other systems through a transactional outbox.
