@@ -7,6 +7,8 @@ process.env.DATABASE_URL = testDatabaseUrl();
 // Tests that boot the app must not have a background worker retrying rows behind their back; the worker's own
 // tests build and drive it explicitly.
 process.env.PENDING_REFERENCE_WORKER = 'off';
+// Same for the outbox publisher: its tests build and drive it explicitly.
+process.env.OUTBOX_WORKER = 'off';
 // Same for the queue consumer: its tests build it against throwaway queues.
 process.env.SQS_CONSUMER = 'off';
 // The SQS emulator accepts any credentials, but the AWS SDK refuses to sign without some.

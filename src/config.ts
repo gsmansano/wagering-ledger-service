@@ -25,6 +25,16 @@ export interface AppConfig {
     backoffBaseMs: number;
     backoffCapMs: number;
   };
+  /** Publication of outbox events (decisions #56 to #59). */
+  outbox: {
+    workerEnabled: boolean;
+    pollIntervalMs: number;
+    batchSize: number;
+    maxAttempts: number;
+    backoffBaseMs: number;
+    backoffCapMs: number;
+    sendTimeoutMs: number;
+  };
 }
 
 // Defaults match the host-mapped ports in docker-compose.yml. Inside Compose,
@@ -54,6 +64,15 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       maxAttempts: Number(env.PENDING_REFERENCE_MAX_ATTEMPTS ?? 10),
       backoffBaseMs: Number(env.PENDING_REFERENCE_BACKOFF_BASE_MS ?? 1_000),
       backoffCapMs: Number(env.PENDING_REFERENCE_BACKOFF_CAP_MS ?? 300_000),
+    },
+    outbox: {
+      workerEnabled: (env.OUTBOX_WORKER ?? 'on') !== 'off',
+      pollIntervalMs: Number(env.OUTBOX_POLL_MS ?? 500),
+      batchSize: Number(env.OUTBOX_BATCH_SIZE ?? 50),
+      maxAttempts: Number(env.OUTBOX_MAX_ATTEMPTS ?? 20),
+      backoffBaseMs: Number(env.OUTBOX_BACKOFF_BASE_MS ?? 1_000),
+      backoffCapMs: Number(env.OUTBOX_BACKOFF_CAP_MS ?? 300_000),
+      sendTimeoutMs: Number(env.OUTBOX_SEND_TIMEOUT_MS ?? 10_000),
     },
   };
 }

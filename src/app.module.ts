@@ -8,6 +8,7 @@ import type { ReferenceRetryPolicy } from './application/transaction/reference-r
 import { GetLedger } from './application/query/get-ledger';
 import { GetTransaction } from './application/query/get-transaction';
 import { GetWallet } from './application/query/get-wallet';
+import { PublishOutbox } from './application/outbox/publish-outbox';
 import { ProcessWagerTransaction } from './application/transaction/process-wager-transaction';
 import { ResolvePendingReference } from './application/transaction/resolve-pending-reference';
 import { CreateWallet } from './application/wallet/create-wallet';
@@ -17,8 +18,10 @@ import { createOrmConfig } from './infrastructure/database/mikro-orm.config';
 import { newId } from './infrastructure/id-generator';
 import { MikroOrmUnitOfWork } from './infrastructure/database/repositories/mikro-orm-unit-of-work';
 import { ReadinessService } from './infrastructure/readiness.service';
+import { OutboxWorker } from './infrastructure/workers/outbox.worker';
 import { PendingReferenceWorker } from './infrastructure/workers/pending-reference.worker';
-import { WAGER_DLQ, WAGER_QUEUE } from './infrastructure/messaging/queue-names';
+import { SqsEventPublisher } from './infrastructure/messaging/sqs-event-publisher';
+import { EVENTS_QUEUE, WAGER_DLQ, WAGER_QUEUE } from './infrastructure/messaging/queue-names';
 import { SqsModule } from './infrastructure/messaging/sqs.module';
 import { SqsConsumer } from './interfaces/sqs/sqs-consumer';
 import { WagerMessageHandler } from './interfaces/sqs/wager-message.handler';
@@ -111,6 +114,32 @@ const REFERENCE_RETRY = Symbol('ReferenceRetryPolicy');
         });
       },
       inject: [SQSClient, ProcessWagerTransaction],
+    },
+    {
+      provide: SqsEventPublisher,
+      useFactory: (sqs: SQSClient) => new SqsEventPublisher(sqs, EVENTS_QUEUE, loadConfig().outbox.sendTimeoutMs),
+      inject: [SQSClient],
+    },
+    {
+      provide: PublishOutbox,
+      useFactory: (unitOfWork: UnitOfWork, publisher: SqsEventPublisher) => {
+        const { maxAttempts, backoffBaseMs, backoffCapMs } = loadConfig().outbox;
+        return new PublishOutbox({
+          unitOfWork,
+          publisher,
+          now: () => new Date(),
+          retry: { maxAttempts, baseMs: backoffBaseMs, capMs: backoffCapMs },
+        });
+      },
+      inject: [UNIT_OF_WORK, SqsEventPublisher],
+    },
+    {
+      provide: OutboxWorker,
+      useFactory: (publishOutbox: PublishOutbox) => {
+        const { workerEnabled, pollIntervalMs, batchSize } = loadConfig().outbox;
+        return new OutboxWorker(publishOutbox, { enabled: workerEnabled, pollIntervalMs, batchSize });
+      },
+      inject: [PublishOutbox],
     },
     {
       provide: PendingReferenceWorker,
