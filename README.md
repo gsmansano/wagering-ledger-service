@@ -16,7 +16,9 @@ curl localhost:3000/health/live   # {"status":"ok"}
 bun test
 ```
 
-`docker compose up` starts PostgreSQL, MiniStack (SQS emulator), a one-shot `migrate` service that applies pending migrations, and the app. The app creates the `wager-transactions.fifo` queue and its dead-letter queue `wager-transactions-dlq.fifo` on startup.
+`docker compose up` starts PostgreSQL, MiniStack (SQS emulator), a one-shot `migrate` service that applies pending migrations, and the app. The app creates the `wager-transactions.fifo` queue, its dead-letter queue `wager-transactions-dlq.fifo` and the `wager-events.fifo` queue on startup.
+
+Design decisions, trade-offs and known limitations are in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Commands
 
@@ -29,7 +31,7 @@ bun test
 | `bun run poc:reversals` | Curl walkthrough of M5: a REFUND before its BET is parked, the worker applies it after the BET arrives, a second reversal is refused, an orphan reversal is rejected (needs the app running with short retry timings, see below) |
 | `bun run poc:consumer` | AWS CLI walkthrough of M7: send queue messages for a BET (applied once), a duplicate (no effect) and two invalid messages (they land in the DLQ with the reason); runs `amazon/aws-cli` in Docker when `aws` is not installed (needs the app running) |
 | `bun run poc:outbox` | Walkthrough of M8: an instance commits and dies before publishing and another publishes the events, a repeated send leaves one copy in the queue, a parked event holds back its own wallet until it is requeued; starts its own app instances on ports 3021 and 3022, so the Compose `app` must be stopped (needs `postgres`, `ministack` and `migrate` running) |
-| `bun run poc:observability` | starts an instance and shows the JSON logs, the metrics and a request shed by the wallet-lock timeout |
+| `bun run poc:observability` | Walkthrough of M10: starts an instance and shows the JSON logs, the metrics and a request shed by the wallet-lock timeout (needs `postgres`, `ministack` and `migrate` running; stop the Compose `app`) |
 | `bun run poc:multi` | Walkthrough of M9: three instances share four wallets under a mixed load, one is killed with SIGKILL mid-load, and the script prints the stored balance next to the ledger sum of every wallet; starts its own app instances on ports 3031 to 3033, so the Compose `app` must be stopped (needs `postgres`, `ministack` and `migrate` running) |
 | `bun run poc:schema` | Try to break each database constraint and show PostgreSQL refusing it (needs `docker compose up`; leaves no data) |
 | `bun run typecheck` | Type-check with `tsc --noEmit` |
@@ -66,7 +68,7 @@ One table for every endpoint, so a provider can decide from the status alone:
 | `404` | `WALLET_NOT_FOUND` or `TRANSACTION_NOT_FOUND` | Fix the id |
 | `409` | `IDEMPOTENCY_CONFLICT` (same key, other payload) or `WALLET_ALREADY_EXISTS` | Do not resend with that key |
 | `422` | Business rejection: the body carries `status: REJECTED` and a `failureCode`; a replay answers `422` again | Final, do not resend |
-| `503` + `Retry-After` | `TRANSIENT_FAILURE`: the database was unavailable or a deadlock occurred | Resend the same request |
+| `503` + `Retry-After` | `TRANSIENT_FAILURE`: the database was unavailable, a deadlock occurred or the wait for a wallet lock exceeded `WALLET_LOCK_TIMEOUT_MS` | Resend the same request |
 | `500` | `INTERNAL_ERROR`: a bug, details are only in the server log | Report it |
 
 ```bash
@@ -148,7 +150,7 @@ update outbox_messages set failed_at = null, attempts = 0, next_attempt_at = nul
 
 ## Several instances
 
-Any number of instances can run against the same database and queues; nothing is shared in memory. A wallet's lock
+Any number of instances can run against the same database and queues; nothing is shared in memory. To start more than one by hand, run `PORT=3001 bun run start` and `PORT=3002 bun run start` against the Compose services. A wallet's lock
 serializes its writers, `ON CONFLICT` makes duplicates replays, and every worker claims rows with `SKIP LOCKED`.
 
 - `bun run poc:multi` runs three instances, applies a mixed load, kills one with SIGKILL and prints `balance == ledger` per wallet.
@@ -192,7 +194,6 @@ real deployment keep it on an internal network or behind the guard once real aut
 | `wagering_outbox_pending_events`, `wagering_outbox_lag_seconds`, `wagering_outbox_parked_events` | events not yet published, age of the oldest, and parked events. Events held behind a parked one count as pending and keep the lag growing, so a held wallet shows as a rising lag; `parked > 0` tells it apart from a slow publisher |
 | `wagering_dlq_messages` | messages waiting in the wager DLQ |
 | `wagering_dependency_up{dependency}` | 1 when PostgreSQL or SQS answers the readiness probe |
-
 | `wagering_wallet_lock_wait_seconds{outcome}` | histogram of the wait for a wallet lock; `timeout` is a request shed with a `503` |
 
 Labels hold kinds, statuses and outcomes only, never wallet, player or provider ids.

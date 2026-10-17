@@ -163,14 +163,14 @@ Section references (§) point to the original requirements document.
 
 ## M11 — Documentation and final review — §14 _(current)_
 
-- [ ] Unify the correlation id: the request log's `correlationId` (generated per request) must be the one the use cases put on events when the caller sends no header (M10 review F-1)
-- [ ] `README.md` (setup, commands, multi-instance run) and `ARCHITECTURE.md` (decisions, trade-offs, limitations)
-- [ ] `ARCHITECTURE.md` states the ordering semantics: concurrent requests on one wallet are applied in lock-acquisition order, not arrival order, and the ledger records the order actually applied; a provider that needs A before B must wait for A's response
-- [ ] `ARCHITECTURE.md` documents the authentication decision: no-op guard now, the intended identity-provider design (decision #49) and the provider-identity check
-- [ ] `ARCHITECTURE.md` documents the HTTP status table (decision #43) and the added interpretations (rule 4, decision #36)
-- [ ] `ARCHITECTURE.md` states the event consumer contract (decisions #56–#61): at-least-once, deduplicate by `eventId`, gaps detectable through `walletVersion`, a parked event holds its wallet's stream until requeued
-- [ ] Final review of the transaction path
-- [ ] `ARCHITECTURE.md` limitations name the hot-wallet behaviour: requests queued on one wallet each hold a connection, so a large burst on one wallet can delay others until the pool is tuned or the load is spread (SQS groups per wallet, scaling out)
+- [x] Unify the correlation id: the request log's `correlationId` (generated per request) must be the one the use cases put on events when the caller sends no header (M10 review F-1)
+- [x] `README.md` (setup, commands, multi-instance run) and `ARCHITECTURE.md` (decisions, trade-offs, limitations)
+- [x] `ARCHITECTURE.md` states the ordering semantics: concurrent requests on one wallet are applied in lock-acquisition order, not arrival order, and the ledger records the order actually applied; a provider that needs A before B must wait for A's response
+- [x] `ARCHITECTURE.md` documents the authentication decision: no-op guard now, the intended identity-provider design (decision #49) and the provider-identity check
+- [x] `ARCHITECTURE.md` documents the HTTP status table (decision #43) and the added interpretations (rule 4, decision #36)
+- [x] `ARCHITECTURE.md` states the event consumer contract (decisions #56–#61): at-least-once, deduplicate by `eventId`, gaps detectable through `walletVersion`, a parked event holds its wallet's stream until requeued
+- [x] Final review of the transaction path
+- [x] `ARCHITECTURE.md` limitations name the hot-wallet behaviour: requests queued on one wallet each hold a connection, so a large burst on one wallet can delay others until the pool is tuned or the load is spread (SQS groups per wallet, scaling out)
 
 ## M12 — Optional extras
 
