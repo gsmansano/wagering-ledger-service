@@ -144,14 +144,36 @@ export interface DeliveryRecord {
   retries: number;
 }
 
+/** Counts finished deliveries and lets a test act when the load reaches a given point (kill an instance, say). */
+export class Progress {
+  delivered = 0;
+  private waiters: { at: number; resolve: () => void }[] = [];
+
+  tick(): void {
+    this.delivered += 1;
+    this.waiters = this.waiters.filter((waiter) => {
+      if (this.delivered < waiter.at) return true;
+      waiter.resolve();
+      return false;
+    });
+  }
+
+  reached(count: number): Promise<void> {
+    if (this.delivered >= count) return Promise.resolve();
+    return new Promise((resolve) => this.waiters.push({ at: count, resolve }));
+  }
+}
+
 export interface LoadOptions {
   concurrency: number;
   sqs: SQSClient;
   wagerQueueUrl: string;
+  progress?: Progress;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const MAX_RETRIES = 8;
+/** A delivery keeps trying, with the same key, for this long: enough to ride out a restart of every instance. */
+const DELIVERY_DEADLINE_MS = 90_000;
 
 /**
  * Plays the plan with `concurrency` operations in flight. HTTP deliveries rotate over the running instances, and a
@@ -164,9 +186,13 @@ export async function playLoad(cluster: Cluster, plan: LoadPlan, options: LoadOp
   const deliverHttp = async (operation: Operation): Promise<DeliveryRecord> => {
     const record: DeliveryRecord = { operation, retries: 0 };
     const base = operation.duplicateOf === undefined ? operation.index : operation.duplicateOf + 1 + operation.index;
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    const deadline = Date.now() + DELIVERY_DEADLINE_MS;
+    for (let attempt = 0; Date.now() < deadline; attempt += 1) {
       const running = cluster.alive;
-      if (running.length === 0) throw new Error('No running instance to deliver to');
+      if (running.length === 0) {
+        await sleep(100); // every instance is down; wait for a restart
+        continue;
+      }
       const target = running[(base + attempt) % running.length]!;
       try {
         const res = await fetch(`${target.url}/wagering/transactions`, {
@@ -190,7 +216,7 @@ export async function playLoad(cluster: Cluster, plan: LoadPlan, options: LoadOp
         // connection refused or reset: the instance is gone; the same key goes to another one
       }
       record.retries += 1;
-      await sleep(50 * (attempt + 1));
+      await sleep(Math.min(50 * (attempt + 1), 500));
     }
     return record;
   };
@@ -220,6 +246,7 @@ export async function playLoad(cluster: Cluster, plan: LoadPlan, options: LoadOp
     for (let i = next++; i < plan.operations.length; i = next++) {
       const operation = plan.operations[i]!;
       records[i] = operation.channel === 'http' ? await deliverHttp(operation) : await deliverSqs(operation);
+      options.progress?.tick();
     }
   };
   await Promise.all(Array.from({ length: options.concurrency }, worker));

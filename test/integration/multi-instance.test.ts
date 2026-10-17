@@ -1,60 +1,34 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { DeleteQueueCommand, GetQueueUrlCommand, SQSClient } from '@aws-sdk/client-sqs';
+import type { SQSClient } from '@aws-sdk/client-sqs';
 import type { MikroORM } from '@mikro-orm/postgresql';
-import { loadConfig } from '../../src/config';
-import { assertInvariants, waitForConvergence, type ConvergenceTarget } from '../support/convergence';
+import { assertAnswersMatchDatabase, assertInvariants, waitForConvergence, type ConvergenceTarget } from '../support/convergence';
 import { initTestOrm, truncateAll } from '../support/database';
-import { Cluster } from '../support/instances';
+import { startClusterFixture, type ClusterFixture } from '../support/cluster-fixture';
+import type { Cluster } from '../support/instances';
 import { openWallets, planLoad, playLoad, type DeliveryRecord } from '../support/load';
 
-// Real OS processes sharing one database and one set of queues (§8, §13). The processes own their queues (a
-// per-run prefix), so a running development stack cannot take their messages, and the final state is judged by
-// the database invariants, not by what the clients were told.
+// Real OS processes sharing one database and one set of queues (§8, §13). The final state is judged by the database
+// invariants, not by what the clients were told.
 const INSTANCES = 3;
 const WALLETS = 6;
 const SEED = Number(process.env.LOAD_SEED ?? 20261018);
-const RUN_PREFIX = `mi${Date.now().toString(36)}-`;
 
 describe('several instances under mixed load (real processes, PostgreSQL and MiniStack)', () => {
-  const { sqs: sqsConfig } = loadConfig();
-  const sqs = new SQSClient({
-    endpoint: sqsConfig.endpoint,
-    region: sqsConfig.region,
-    credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
-  });
   let orm: MikroORM;
+  let fixture: ClusterFixture;
   let cluster: Cluster;
-  let target: Pick<ConvergenceTarget, 'wagerQueueUrl' | 'dlqUrl'>;
-
-  const queueUrl = async (name: string) => (await sqs.send(new GetQueueUrlCommand({ QueueName: `${RUN_PREFIX}${name}` }))).QueueUrl!;
+  let sqs: SQSClient;
+  let target: ClusterFixture['target'];
 
   beforeAll(async () => {
     orm = await initTestOrm();
     await truncateAll(orm);
-    cluster = await Cluster.start(INSTANCES, {
-      env: {
-        SQS_QUEUE_PREFIX: RUN_PREFIX,
-        PENDING_REFERENCE_WORKER: 'on',
-        PENDING_REFERENCE_POLL_MS: '200',
-        PENDING_REFERENCE_BACKOFF_BASE_MS: '100',
-        PENDING_REFERENCE_BACKOFF_CAP_MS: '1000',
-        OUTBOX_WORKER: 'on',
-        OUTBOX_POLL_MS: '100',
-        SQS_CONSUMER: 'on',
-        SQS_CONSUMER_CONCURRENCY: '2',
-        SQS_WAIT_TIME_SECONDS: '1',
-        SQS_RETRY_BASE_MS: '200',
-        SQS_SHUTDOWN_TIMEOUT_MS: '3000',
-      },
-    });
-    target = { wagerQueueUrl: await queueUrl('wager-transactions.fifo'), dlqUrl: await queueUrl('wager-transactions-dlq.fifo') };
+    fixture = await startClusterFixture(INSTANCES);
+    ({ cluster, sqs, target } = fixture);
   }, 60_000);
 
   afterAll(async () => {
-    await cluster?.stopAll();
-    for (const name of ['wager-transactions.fifo', 'wager-transactions-dlq.fifo', 'wager-events.fifo']) {
-      await sqs.send(new DeleteQueueCommand({ QueueUrl: await queueUrl(name) })).catch(() => undefined);
-    }
+    await fixture?.dispose();
     await truncateAll(orm);
     await orm.close();
   });
@@ -76,6 +50,7 @@ describe('several instances under mixed load (real processes, PostgreSQL and Min
     try {
       await waitForConvergence(orm, sqs, convergence);
       await assertInvariants(orm, sqs, convergence);
+      await assertAnswersMatchDatabase(orm, records);
     } catch (error) {
       for (const instance of cluster.instances) console.error(`--- instance ${instance.index} ---\n${cluster.tail(instance.index)}`);
       throw new Error(`${(error as Error).message} (replay with LOAD_SEED=${SEED})`, { cause: error });

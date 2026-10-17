@@ -1,6 +1,7 @@
 import { GetQueueAttributesCommand, type SQSClient } from '@aws-sdk/client-sqs';
 import type { MikroORM } from '@mikro-orm/postgresql';
 import { expect } from 'bun:test';
+import type { DeliveryRecord } from './load';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -144,4 +145,26 @@ export async function assertInvariants(orm: MikroORM, sqs: SQSClient, target: Co
 
   // the dead-letter queue is empty: no message was parked as poison
   expect((await snapshot(orm, sqs, target)).dlqMessages, 'messages in the DLQ').toBe(0);
+}
+
+/**
+ * What the providers were told must be what the database holds. A final answer (200, 422) names a settled
+ * transaction with the same id and outcome; a pending answer (202) names an existing row. After a crash this is the
+ * check that no acknowledged request was lost and none was applied under another id.
+ */
+export async function assertAnswersMatchDatabase(orm: MikroORM, records: DeliveryRecord[]): Promise<void> {
+  const answered = records.filter((r) => r.httpStatus === 200 || r.httpStatus === 202 || r.httpStatus === 422);
+  const rows = await orm.em
+    .getConnection()
+    .execute<{ id: string; external_transaction_id: string; status: string }[]>(
+      `select id, external_transaction_id, status from wager_transactions where kind <> 'OPENING'`,
+    );
+  const byExternalId = new Map(rows.map((row) => [row.external_transaction_id, row]));
+  for (const record of answered) {
+    const row = byExternalId.get(record.operation.request.externalTransactionId);
+    expect(row, `no row for ${record.operation.request.externalTransactionId} (answered ${record.httpStatus})`).toBeDefined();
+    expect(row!.id).toBe(record.transactionId!);
+    if (record.httpStatus === 200) expect(row!.status).toBe('PROCESSED');
+    if (record.httpStatus === 422) expect(row!.status).toBe('REJECTED');
+  }
 }
